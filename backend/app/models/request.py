@@ -38,7 +38,7 @@ class MaintenanceRequest(Base):
     request_id = Column(String(50), unique=True, index=True, nullable=False)
     task_title = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
-    department = Column(String(50), nullable=False)  # Engineering, TRD, S&T
+    department = Column(String(50), nullable=False, index=True)  # Engineering, TRD, S&T
     railway_division = Column(String(100), nullable=False, default="Delhi")
     railway_section = Column(String(100), nullable=False)
     section_id = Column(Integer, ForeignKey("railway_sections.id"), nullable=True)
@@ -61,10 +61,15 @@ class MaintenanceRequest(Base):
     task_dependencies = Column(Text, nullable=True)  # JSON list of request IDs this task depends on
     asset_criticality = Column(Enum(AssetCriticality), default=AssetCriticality.HIGH, nullable=False)
     urgency_level = Column(Enum(UrgencyLevel), default=UrgencyLevel.ROUTINE, nullable=False)
-    current_status = Column(Enum(RequestStatus), default=RequestStatus.SUBMITTED, nullable=False)
+    current_status = Column(
+        Enum(RequestStatus),
+        default=RequestStatus.SUBMITTED,
+        nullable=False,
+        index=True,
+    )
     
     # AI / ML Prioritization & Analytics
-    ai_priority_score = Column(Float, default=50.0)  # 0 to 100
+    ai_priority_score = Column(Float, default=50.0, index=True)  # 0 to 100
     ai_risk_factor = Column(String(50), default="MODERATE")  # LOW, MODERATE, HIGH, SEVERE
     ai_explanation = Column(Text, nullable=True)
     readiness_score = Column(Float, nullable=True)

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 import json
 from datetime import datetime, timedelta
@@ -203,7 +203,14 @@ def get_dashboard_metrics(db: Session = Depends(get_db)) -> Dict[str, Any]:
 
     # 5. Active disruptions and independently revalidated schedule conflicts.
     active_disruptions = db.query(Disruption).filter(Disruption.is_active == True).count()
-    violations = refresh_schedule_validation(db, active_blocks)
+    # Metrics are read-only. Revalidating here must not commit conflict flags on
+    # every dashboard refresh, especially when the database is remote.
+    violations = refresh_schedule_validation(
+        db,
+        active_blocks,
+        commit=False,
+        persist=False,
+    )
     conflicts_count = len(violations)
 
     # 6. Department Breakdown
@@ -265,7 +272,10 @@ def get_topology():
 @router.get("/weekly-timeline")
 def get_weekly_timeline(db: Session = Depends(get_db)):
     """Fetch blocks scheduled in the upcoming week for visual Gantt / Timeline"""
-    blocks = db.query(MaintenanceBlock).all()
+    blocks = db.query(MaintenanceBlock).options(
+        joinedload(MaintenanceBlock.request),
+        joinedload(MaintenanceBlock.section),
+    ).all()
     timeline_items = []
     for b in blocks:
         req = b.request

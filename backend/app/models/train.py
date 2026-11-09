@@ -27,7 +27,7 @@ class TrainSchedule(Base):
     
     # Daily or weekly operating schedule
     frequency = Column(String(50), default="DAILY")
-    section_id = Column(Integer, ForeignKey("railway_sections.id"), nullable=True)
+    section_id = Column(Integer, ForeignKey("railway_sections.id"), nullable=True, index=True)
     
     # Timing relative to section
     scheduled_entry_time = Column(String(10), nullable=False)  # HH:MM e.g. "06:15"

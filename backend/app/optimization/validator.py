@@ -262,6 +262,7 @@ def refresh_schedule_validation(
     db: Session,
     blocks: Optional[Sequence[MaintenanceBlock]] = None,
     commit: bool = True,
+    persist: bool = True,
 ) -> List[Dict[str, Any]]:
     active = list(blocks) if blocks is not None else db.query(MaintenanceBlock).filter(
         MaintenanceBlock.status.in_(ACTIVE_BLOCK_STATUSES)
@@ -274,7 +275,8 @@ def refresh_schedule_validation(
     for block in active:
         block.conflict_detected = bool(block.id in violations_by_block)
         block.conflict_details = json.dumps(violations_by_block.get(block.id, []))
-    db.flush()
-    if commit:
-        db.commit()
+    if persist:
+        db.flush()
+        if commit:
+            db.commit()
     return violations

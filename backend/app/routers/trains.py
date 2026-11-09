@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 
 from app.database import get_db
@@ -15,7 +15,9 @@ router = APIRouter(
 
 @router.get("")
 def get_train_schedules(db: Session = Depends(get_db)):
-    trains = db.query(TrainSchedule).all()
+    trains = db.query(TrainSchedule).options(
+        joinedload(TrainSchedule.section),
+    ).all()
     results = []
     for t in trains:
         results.append({

@@ -24,13 +24,18 @@ class MaintenanceBlock(Base):
     id = Column(Integer, primary_key=True, index=True)
     block_code = Column(String(50), unique=True, index=True, nullable=False)
     request_id = Column(Integer, ForeignKey("maintenance_requests.id"), nullable=False)
-    section_id = Column(Integer, ForeignKey("railway_sections.id"), nullable=False)
+    section_id = Column(
+        Integer,
+        ForeignKey("railway_sections.id"),
+        nullable=False,
+        index=True,
+    )
     work_package_id = Column(
         Integer, ForeignKey("work_packages.id"), nullable=True, index=True
     )
     
-    scheduled_start = Column(DateTime, nullable=False)
-    scheduled_end = Column(DateTime, nullable=False)
+    scheduled_start = Column(DateTime, nullable=False, index=True)
+    scheduled_end = Column(DateTime, nullable=False, index=True)
     duration_hours = Column(Float, nullable=False)
     
     track_type = Column(Enum(TrackType), default=TrackType.UP_LINE, nullable=False)
@@ -38,7 +43,12 @@ class MaintenanceBlock(Base):
     signal_disconnection_required = Column(Boolean, default=False)  # S&T interlocking disconnection
     speed_restriction_kmh = Column(Integer, nullable=True)  # e.g., 30 km/h caution order
     
-    status = Column(Enum(BlockStatus), default=BlockStatus.PROPOSED, nullable=False)
+    status = Column(
+        Enum(BlockStatus),
+        default=BlockStatus.PROPOSED,
+        nullable=False,
+        index=True,
+    )
     is_pinned = Column(Boolean, default=False)  # If pinned/approved, replanning will preserve it!
     
     # Validation & Optimization telemetry
