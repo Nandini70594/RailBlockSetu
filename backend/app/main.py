@@ -69,7 +69,12 @@ from app.routers import (
 async def lifespan(app: FastAPI):
     warn_if_default_secret_key()
 
-    # Initialize database tables
+    initialize_database()
+    yield
+
+
+def initialize_database() -> None:
+    """Create missing tables/columns and seed a new database."""
     Base.metadata.create_all(bind=engine)
     ensure_readiness_columns()
 
@@ -78,7 +83,6 @@ async def lifespan(app: FastAPI):
         seed_database(db)
     finally:
         db.close()
-    yield
 
 app = FastAPI(
     title="RailBlockSetu - Intelligent Railway Maintenance Platform",

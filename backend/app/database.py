@@ -2,7 +2,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from app.config import settings
 
-connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
+if settings.DATABASE_URL.startswith("sqlite"):
+    connect_args = {"check_same_thread": False}
+else:
+    # Transaction poolers (for example Neon/Supavisor) cannot reliably reuse
+    # psycopg server-side prepared statements across pooled connections.
+    connect_args = {"prepare_threshold": None}
 
 engine = create_engine(
     settings.DATABASE_URL,

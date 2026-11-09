@@ -14,6 +14,31 @@ import {
 
 const API_BASE = "/api/v1";
 
+type OptimizationResult = {
+  status: string;
+  blocks_scheduled: number;
+  [key: string]: unknown;
+};
+
+async function readApiResponse<T>(res: Response, fallbackMessage: string): Promise<T> {
+  const contentType = res.headers.get("content-type") || "";
+  const body = contentType.includes("application/json")
+    ? await res.json().catch(() => null)
+    : await res.text().catch(() => "");
+
+  if (!res.ok) {
+    const detail =
+      body && typeof body === "object" && "detail" in body
+        ? String(body.detail)
+        : typeof body === "string" && body.trim()
+          ? body.trim()
+          : fallbackMessage;
+    throw new Error(detail);
+  }
+
+  return body as T;
+}
+
 function getHeaders(): HeadersInit {
   const token = localStorage.getItem("railblocksetu_token");
   const headers: HeadersInit = {
@@ -54,8 +79,7 @@ export const api = {
   // Dashboard
   async getMetrics(): Promise<DashboardMetrics> {
     const res = await fetch(`${API_BASE}/dashboard/metrics`, { headers: getHeaders() });
-    if (!res.ok) throw new Error("Failed to load dashboard metrics");
-    return res.json();
+    return readApiResponse<DashboardMetrics>(res, "Failed to load dashboard metrics");
   },
 
   async getActivityFeed(): Promise<AuditLog[]> {
@@ -118,13 +142,16 @@ export const api = {
   },
 
   // Optimization
-  async runOptimization(horizonHours: number = 72, pinnedIds?: number[]) {
+  async runOptimization(
+    horizonHours: number = 72,
+    pinnedIds?: number[]
+  ): Promise<OptimizationResult> {
     const res = await fetch(`${API_BASE}/optimization/run`, {
       method: "POST",
       headers: getHeaders(),
       body: JSON.stringify({ horizon_hours: horizonHours, pinned_block_ids: pinnedIds }),
     });
-    return res.json();
+    return readApiResponse<OptimizationResult>(res, "Optimization failed");
   },
 
   async getBlocks(status?: string): Promise<MaintenanceBlock[]> {
