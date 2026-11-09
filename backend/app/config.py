@@ -7,6 +7,14 @@ load_dotenv()
 
 DEVELOPMENT_SECRET_KEY = "railblocksetu-ultra-secure-secret-key-2026-novex"
 
+def get_database_url() -> str:
+    database_url = os.getenv("DATABASE_URL", "sqlite:///./railblocksetu.db")
+    if database_url.startswith("postgres://"):
+        return database_url.replace("postgres://", "postgresql+psycopg://", 1)
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return database_url
+
 class Settings(BaseModel):
     PROJECT_NAME: str = "RailBlockSetu"
     VERSION: str = "1.0.0"
@@ -16,7 +24,7 @@ class Settings(BaseModel):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
     
     # SQLite default with PostgreSQL compatibility
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./railblocksetu.db")
+    DATABASE_URL: str = get_database_url()
     
     # Optimization settings
     DEFAULT_SLOT_DURATION_MINUTES: int = 30
