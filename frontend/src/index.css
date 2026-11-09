@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-main: #f8fafc;
+    --navy-primary: #0f172a;
+    --navy-secondary: #1e293b;
+    --royal-blue: #2563eb;
+    --sky-soft: #f0f7ff;
+    --slate-text: #334155;
+    --slate-muted: #64748b;
+    --border-soft: #e2e8f0;
+    --emerald-success: #10b981;
+    --amber-warning: #f59e0b;
+    --red-critical: #ef4444;
+  }
+  
+  body {
+    background-color: #f8fafc;
+    color: #1e293b;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    overflow-x: hidden;
+  }
+}
+
+/* Custom crisp scrollbars for enterprise tables and timelines */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Live Railway Signal indicator pulse */
+@keyframes signalPulse {
+  0% { transform: scale(0.95); opacity: 0.85; }
+  50% { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.85; }
+}
+
+.signal-live {
+  animation: signalPulse 2s infinite ease-in-out;
+}
+
+/* Subtle train track dash animation for visual timeline indicators */
+@keyframes trackFlow {
+  0% { background-position: 0 0; }
+  100% { background-position: 40px 0; }
+}
+
+.track-pattern {
+  background-image: repeating-linear-gradient(90deg, #e2e8f0, #e2e8f0 10px, transparent 10px, transparent 20px);
+}
