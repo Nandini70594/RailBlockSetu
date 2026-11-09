@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+python-dotenv
+bcrypt
+PyJWT
+python-multipart
+ortools
+scikit-learn
+pandas
+numpy
+networkx
+pytest
+httpx

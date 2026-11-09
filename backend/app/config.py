@@ -1,6 +1,9 @@
 import os
 from pydantic import BaseModel
 from typing import Any, Dict, List
+from dotenv import load_dotenv
+
+load_dotenv()
 
 DEVELOPMENT_SECRET_KEY = "railblocksetu-ultra-secure-secret-key-2026-novex"
 
