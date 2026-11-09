@@ -42,6 +42,8 @@ class MaintenanceBlock(Base):
     or_tools_score = Column(Float, default=0.0)
     conflict_detected = Column(Boolean, default=False)
     conflict_details = Column(Text, nullable=True)
+    readiness_verdict = Column(String(30), nullable=True)
+    readiness_snapshot = Column(Text, nullable=True)
     
     # Review & Approval workflow
     approved_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)

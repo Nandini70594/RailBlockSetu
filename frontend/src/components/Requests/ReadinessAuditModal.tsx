@@ -10,7 +10,6 @@ import {
   Clock,
   ShieldCheck,
   Sparkles,
-  Info
 } from "lucide-react";
 import { ReadinessReport } from "../../types";
 import { api } from "../../api/client";
@@ -102,7 +101,7 @@ export const ReadinessAuditModal: React.FC<ReadinessAuditModalProps> = ({
               <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-850 via-slate-800 to-slate-850 border border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
                   <div className="relative flex items-center justify-center w-20 h-20 rounded-full bg-slate-900 border-4 border-cyan-500/80 shadow-lg text-white font-extrabold text-2xl font-mono">
-                    {report.overall_readiness_score}%
+                    {report.overall_readiness_score == null ? "—" : `${report.overall_readiness_score}%`}
                   </div>
                   <div>
                     <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
@@ -144,7 +143,9 @@ export const ReadinessAuditModal: React.FC<ReadinessAuditModalProps> = ({
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-white">1. Gang & Skilled Crew Readiness</span>
                       <span className="text-xs font-mono font-bold text-cyan-400">
-                        {report.pillars.staff.score}% PASS
+                        {report.pillars.staff.score == null
+                          ? report.pillars.staff.status
+                          : `${report.pillars.staff.score}% ${report.pillars.staff.status}`}
                       </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-1">{report.pillars.staff.notes}</p>
@@ -160,7 +161,9 @@ export const ReadinessAuditModal: React.FC<ReadinessAuditModalProps> = ({
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-white">2. Heavy Machinery & Equipment Allocation</span>
                       <span className="text-xs font-mono font-bold text-cyan-400">
-                        {report.pillars.machinery.score}% {report.pillars.machinery.status}
+                        {report.pillars.machinery.score == null
+                          ? report.pillars.machinery.status
+                          : `${report.pillars.machinery.score}% ${report.pillars.machinery.status}`}
                       </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-1">{report.pillars.machinery.notes}</p>
@@ -176,7 +179,9 @@ export const ReadinessAuditModal: React.FC<ReadinessAuditModalProps> = ({
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-white">3. Materials & Replacement Stock</span>
                       <span className="text-xs font-mono font-bold text-cyan-400">
-                        {report.pillars.materials.score}% {report.pillars.materials.status}
+                        {report.pillars.materials.score == null
+                          ? report.pillars.materials.status
+                          : `${report.pillars.materials.score}% ${report.pillars.materials.status}`}
                       </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-1">{report.pillars.materials.notes}</p>
@@ -192,7 +197,9 @@ export const ReadinessAuditModal: React.FC<ReadinessAuditModalProps> = ({
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-white">4. Corridor Traffic Window & Headway Gap</span>
                       <span className="text-xs font-mono font-bold text-cyan-400">
-                        {report.pillars.traffic_window.score}% {report.pillars.traffic_window.status}
+                        {report.pillars.traffic_window.score == null
+                          ? report.pillars.traffic_window.status
+                          : `${report.pillars.traffic_window.score}% ${report.pillars.traffic_window.status}`}
                       </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-1">{report.pillars.traffic_window.notes}</p>
@@ -208,13 +215,17 @@ export const ReadinessAuditModal: React.FC<ReadinessAuditModalProps> = ({
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-white">5. Department Safety Protocols & Isolation Memo</span>
                       <span className="text-xs font-mono font-bold text-cyan-400">
-                        {report.pillars.safety_isolation.score}% CLEAR
+                        {report.pillars.safety_isolation.score == null
+                          ? report.pillars.safety_isolation.status
+                          : `${report.pillars.safety_isolation.score}% ${report.pillars.safety_isolation.status}`}
                       </span>
                     </div>
                     <div className="mt-2 space-y-1">
                       {report.pillars.safety_isolation.protocol_checks?.map((check: string, idx: number) => (
                         <div key={idx} className="flex items-center gap-2 text-xs text-slate-300">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                          {report.pillars.safety_isolation.obtained?.includes(check)
+                            ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                            : <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
                           <span>{check}</span>
                         </div>
                       ))}

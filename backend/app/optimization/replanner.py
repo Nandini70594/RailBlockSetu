@@ -6,6 +6,7 @@ from app.models.schedule import MaintenanceBlock, BlockStatus
 from app.models.disruption import Disruption
 from app.models.audit import AuditLog
 from app.optimization.scheduler import optimizer_scheduler
+from app.optimization.validator import refresh_schedule_validation
 
 class DisruptionReplanner:
     def __init__(self):
@@ -75,6 +76,7 @@ class DisruptionReplanner:
         )
         db.add(audit)
         db.commit()
+        refresh_schedule_validation(db)
 
         return {
             "disruption_code": disruption.disruption_code,

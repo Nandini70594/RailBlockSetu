@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 from datetime import datetime
 from app.models.schedule import BlockStatus, TrackType
 
@@ -26,6 +26,10 @@ class MaintenanceBlockResponse(BaseModel):
     is_pinned: bool
     or_tools_score: float
     approval_notes: Optional[str] = None
+    readiness_verdict: Optional[str] = None
+    readiness_snapshot: Optional[Dict[str, Any]] = None
+    conflict_detected: bool = False
+    conflict_details: Optional[List[Dict[str, Any]]] = None
     task_title: Optional[str] = None
     department: Optional[str] = None
     section_code: Optional[str] = None

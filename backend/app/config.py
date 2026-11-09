@@ -1,5 +1,6 @@
 import os
 from pydantic import BaseModel
+from typing import List
 
 DEVELOPMENT_SECRET_KEY = "railblocksetu-ultra-secure-secret-key-2026-novex"
 
@@ -19,6 +20,17 @@ class Settings(BaseModel):
     DEFAULT_PLANNING_HORIZON_DAYS: int = 7
     DISRUPTION_PENALTY_WEIGHT: int = 150
     UNSCHEDULED_PENALTY_WEIGHT: int = 1000
+    TRAIN_BUFFER_MINUTES: int = int(os.getenv("TRAIN_BUFFER_MINUTES", "10"))
+    MIN_USEFUL_WINDOW_MINUTES: int = int(
+        os.getenv("MIN_USEFUL_WINDOW_MINUTES", "30")
+    )
+    TRAIN_SOFT_PENALTY_WEIGHT: int = int(
+        os.getenv("TRAIN_SOFT_PENALTY_WEIGHT", "1000000")
+    )
+    READINESS_MANDATORY_PILLARS: List[str] = os.getenv(
+        "READINESS_MANDATORY_PILLARS",
+        "staff,machinery,materials,traffic_window,safety_isolation",
+    ).split(",")
 
 settings = Settings()
 

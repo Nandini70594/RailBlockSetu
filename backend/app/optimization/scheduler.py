@@ -1,15 +1,24 @@
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
+from zoneinfo import ZoneInfo
 import json
 from ortools.sat.python import cp_model
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models.request import MaintenanceRequest, RequestStatus
 from app.models.schedule import MaintenanceBlock, BlockStatus, TrackType
-from app.models.resource import Resource, ResourceType
 from app.models.train import TrainSchedule
 from app.models.disruption import Disruption
 from app.models.audit import AuditLog
+from app.optimization.readiness import readiness_validator
+from app.optimization.train_windows import (
+    build_train_intervals,
+    has_train_free_gap,
+)
+from app.optimization.validator import refresh_schedule_validation
+
+IST = ZoneInfo("Asia/Kolkata")
 
 class BlockOptimizationScheduler:
     def __init__(self):
@@ -31,13 +40,10 @@ class BlockOptimizationScheduler:
         - Task dependency graph
         - Preservation of pinned approved blocks
         """
-        model = cp_model.CpModel()
-        
-        # Base reference time is start of current day or disruption start
-        now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+        # Scheduler datetimes are naive IST wall times, matching HH:MM train times.
+        now = datetime.now(IST).replace(tzinfo=None, minute=0, second=0, microsecond=0)
         base_time = now
         horizon_minutes = horizon_hours * 60
-        slot_step_minutes = 15
         
         # 1. Fetch eligible maintenance requests
         # Submitted, Validated, or already Optimized/Approved if replanning
@@ -52,12 +58,83 @@ class BlockOptimizationScheduler:
         all_requests: List[MaintenanceRequest] = query.all()
         
         if not all_requests:
+            refresh_schedule_validation(db)
             return {
                 "status": "NO_REQUESTS",
                 "message": "No maintenance requests found eligible for scheduling.",
                 "blocks_scheduled": 0,
-                "schedule": []
+                "schedule": [],
+                "unscheduled": [],
+                "excluded": [],
+                "train_intervals_checked": 0,
             }
+
+        trains: List[TrainSchedule] = db.query(TrainSchedule).all()
+        train_intervals = build_train_intervals(
+            trains,
+            base_time,
+            horizon_minutes,
+            settings.TRAIN_BUFFER_MINUTES,
+        )
+
+        schedulable_requests: List[MaintenanceRequest] = []
+        readiness_by_request: Dict[int, Dict[str, Any]] = {}
+        excluded: List[Dict[str, Any]] = []
+        unscheduled: List[Dict[str, Any]] = []
+        train_intervals_checked = 0
+        for req in all_requests:
+            section_trains = [
+                interval for interval in train_intervals
+                if interval.section_id == req.section_id
+            ]
+            train_intervals_checked += len(section_trains)
+            readiness = readiness_validator.validate_request_readiness(
+                req,
+                db,
+                base_time=base_time,
+                horizon_minutes=horizon_minutes,
+                train_intervals=train_intervals,
+            )
+            readiness_by_request[req.id] = readiness
+            if readiness["verdict"] == "NOT_READY":
+                excluded.append({
+                    "request_id": req.id,
+                    "task_title": req.task_title,
+                    "failing_pillars": readiness["failing_pillars"],
+                    "recommended_action": readiness["recommended_action"],
+                    "readiness": readiness,
+                })
+                traffic = readiness["pillars"]["traffic_window"]
+                if traffic["status"] == "FAILED":
+                    duration_minutes = int(req.estimated_duration * 60)
+                    unscheduled.append({
+                        "request_id": req.id,
+                        "task_title": req.task_title,
+                        "reason": (
+                            f"no train-free gap of {duration_minutes} minutes on "
+                            f"section {req.railway_section or req.section_id} "
+                            "within its deadline"
+                        ),
+                    })
+                continue
+            schedulable_requests.append(req)
+
+        if not schedulable_requests:
+            refresh_schedule_validation(db)
+            return {
+                "status": "NO_SCHEDULABLE_REQUESTS",
+                "message": "All eligible requests failed mandatory readiness checks.",
+                "solver_status_name": None,
+                "wall_time_seconds": None,
+                "objective_value": None,
+                "blocks_scheduled": 0,
+                "schedule": [],
+                "unscheduled": unscheduled,
+                "excluded": excluded,
+                "train_intervals_checked": train_intervals_checked,
+            }
+
+        model = cp_model.CpModel()
 
         # 2. Map existing pinned blocks
         pinned_ids = set(pinned_block_ids or [])
@@ -75,30 +152,99 @@ class BlockOptimizationScheduler:
         # 3. Model Decision Variables
         task_vars = {}
         task_info = {}
+        soft_train_penalties = []
         section_intervals: Dict[int, List[Any]] = {}
         machine_intervals: Dict[str, List[Tuple[Any, int]]] = {}
         department_intervals: Dict[str, List[Tuple[Any, int]]] = {}
 
-        for req in all_requests:
+        for req in schedulable_requests:
             rid = req.id
-            dur_mins = max(30, int((req.estimated_duration or 2.5) * 60))
-            
-            # Earliest start
-            req_start_offset = 0
-            if req.required_start_date and req.required_start_date > base_time:
-                req_start_offset = int((req.required_start_date - base_time).total_seconds() / 60)
-            req_start_offset = max(0, min(horizon_minutes - dur_mins, req_start_offset))
+            dur_mins = int(req.estimated_duration * 60)
+            req_start_offset = max(
+                0,
+                int((req.required_start_date - base_time).total_seconds() // 60),
+            )
+            deadline_offset = min(
+                horizon_minutes,
+                int((req.deadline - base_time).total_seconds() // 60),
+            )
+            section_id = req.section_id or 1
+            section_trains = [
+                interval
+                for interval in train_intervals
+                if interval.section_id == section_id
+            ]
+            hard_train_intervals = [
+                interval for interval in section_trains if interval.is_hard
+            ]
 
-            # Deadline limit
-            deadline_offset = horizon_minutes
-            if req.deadline and req.deadline > base_time:
-                deadline_offset = int((req.deadline - base_time).total_seconds() / 60)
-            deadline_offset = max(req_start_offset + dur_mins, min(horizon_minutes, deadline_offset))
+            if (
+                req_start_offset + dur_mins > deadline_offset
+                or not has_train_free_gap(
+                    req_start_offset,
+                    deadline_offset,
+                    dur_mins,
+                    hard_train_intervals,
+                )
+            ):
+                unscheduled.append({
+                    "request_id": rid,
+                    "task_title": req.task_title,
+                    "reason": (
+                        f"no train-free gap of {dur_mins} minutes on section "
+                        f"{req.railway_section or section_id} within its deadline"
+                    ),
+                })
+                continue
 
             # Decision variables for this task
             start_var = model.NewIntVar(req_start_offset, deadline_offset - dur_mins, f"start_{rid}")
             end_var = model.NewIntVar(req_start_offset + dur_mins, deadline_offset, f"end_{rid}")
             interval_var = model.NewIntervalVar(start_var, dur_mins, end_var, f"interval_{rid}")
+
+            for train_index, train_interval in enumerate(section_trains):
+                if train_interval.is_hard:
+                    before_train = model.NewBoolVar(
+                        f"task_{rid}_before_train_{train_index}"
+                    )
+                    after_train = model.NewBoolVar(
+                        f"task_{rid}_after_train_{train_index}"
+                    )
+                    model.AddBoolOr([before_train, after_train])
+                    model.Add(end_var <= train_interval.start_minute).OnlyEnforceIf(
+                        before_train
+                    )
+                    model.Add(start_var >= train_interval.end_minute).OnlyEnforceIf(
+                        after_train
+                    )
+                else:
+                    before_train = model.NewBoolVar(
+                        f"task_{rid}_before_soft_train_{train_index}"
+                    )
+                    after_train = model.NewBoolVar(
+                        f"task_{rid}_after_soft_train_{train_index}"
+                    )
+                    overlaps_train = model.NewBoolVar(
+                        f"task_{rid}_overlaps_soft_train_{train_index}"
+                    )
+                    model.AddBoolOr(
+                        [before_train, after_train, overlaps_train]
+                    )
+                    model.Add(end_var <= train_interval.start_minute).OnlyEnforceIf(
+                        before_train
+                    )
+                    model.Add(start_var >= train_interval.end_minute).OnlyEnforceIf(
+                        after_train
+                    )
+                    model.Add(
+                        end_var >= train_interval.start_minute + 1
+                    ).OnlyEnforceIf(overlaps_train)
+                    model.Add(
+                        start_var <= train_interval.end_minute - 1
+                    ).OnlyEnforceIf(overlaps_train)
+                    soft_train_penalties.append(
+                        overlaps_train * settings.TRAIN_SOFT_PENALTY_WEIGHT
+                    )
 
             # Check if this task is affected by active disruption
             if disruption and req.section_id == disruption.section_id:
@@ -126,7 +272,7 @@ class BlockOptimizationScheduler:
                 "priority_score": req.ai_priority_score or 50.0,
                 "urgency": req.urgency_level.value,
                 "department": req.department,
-                "section_id": req.section_id or 1
+                "section_id": section_id
             }
             task_info[rid] = req
 
@@ -153,7 +299,7 @@ class BlockOptimizationScheduler:
             dept = req.department
             if dept not in department_intervals:
                 department_intervals[dept] = []
-            staff_req = req.required_staff or 4
+            staff_req = req.required_staff
             department_intervals[dept].append((interval_var, staff_req))
 
         # 4. Add Section Non-Overlap Constraints
@@ -202,6 +348,7 @@ class BlockOptimizationScheduler:
             weight = int(tv["priority_score"] * 10)
             # Higher priority = stronger pull toward earlier start
             objective_terms.append(tv["start"] * weight)
+        objective_terms.extend(soft_train_penalties)
 
         model.Minimize(sum(objective_terms))
 
@@ -222,6 +369,13 @@ class BlockOptimizationScheduler:
                 block_start_dt = base_time + timedelta(minutes=start_mins)
                 block_end_dt = base_time + timedelta(minutes=end_mins)
                 req = task_info[rid]
+                hard_train_conflicts = sum(
+                    start_mins < train_interval.end_minute
+                    and end_mins > train_interval.start_minute
+                    for train_interval in train_intervals
+                    if train_interval.is_hard
+                    and train_interval.section_id == tv["section_id"]
+                )
                 
                 # Check track assignment
                 track_type = TrackType.BOTH_LINES if req.department == "Engineering" and "Tamping" in req.task_title else TrackType.UP_LINE
@@ -253,9 +407,12 @@ class BlockOptimizationScheduler:
                         signal_disconnection_required=(req.department == "S&T"),
                         status=BlockStatus.PROPOSED,
                         is_pinned=False,
-                        or_tools_score=round(float(tv["priority_score"]), 1)
+                        or_tools_score=round(float(tv["priority_score"]), 1),
                     )
                     db.add(target_b)
+                readiness = readiness_by_request[rid]
+                target_b.readiness_verdict = readiness["verdict"]
+                target_b.readiness_snapshot = json.dumps(readiness)
                 
                 # Update request status to OPTIMIZED if it was SUBMITTED/VALIDATED
                 if req.current_status in (RequestStatus.SUBMITTED, RequestStatus.VALIDATED):
@@ -271,7 +428,10 @@ class BlockOptimizationScheduler:
                     "duration_hours": round(tv["duration"] / 60.0, 1),
                     "ai_priority_score": tv["priority_score"],
                     "track_type": track_type.value,
-                    "is_pinned": target_b.is_pinned if hasattr(target_b, "is_pinned") else False
+                    "is_pinned": target_b.is_pinned if hasattr(target_b, "is_pinned") else False,
+                    "train_conflicts": hard_train_conflicts,
+                    "readiness_verdict": readiness["verdict"],
+                    "readiness_snapshot": readiness,
                 })
 
             db.commit()
@@ -287,14 +447,28 @@ class BlockOptimizationScheduler:
             )
             db.add(audit)
             db.commit()
+        elif task_vars:
+            for rid, req in task_info.items():
+                unscheduled.append({
+                    "request_id": rid,
+                    "task_title": req.task_title,
+                    "reason": (
+                        "no feasible schedule within the requested window under "
+                        "resource, dependency, and train constraints"
+                    ),
+                })
 
+        refresh_schedule_validation(db)
         return {
             "status": "OPTIMIZED" if is_success else "INFEASIBLE",
             "solver_status_name": solver.StatusName(solver_status),
             "wall_time_seconds": round(solver.WallTime(), 3),
             "objective_value": solver.ObjectiveValue() if is_success else None,
             "blocks_scheduled": len(result_blocks),
-            "schedule": result_blocks
+            "schedule": result_blocks,
+            "unscheduled": unscheduled,
+            "excluded": excluded,
+            "train_intervals_checked": train_intervals_checked,
         }
 
 optimizer_scheduler = BlockOptimizationScheduler()

@@ -57,6 +57,7 @@ class MaintenanceRequest(Base):
     
     # Operational constraints
     safety_requirements = Column(Text, nullable=True)  # JSON: power block, speed restriction, caution order
+    obtained_safety_requirements = Column(Text, nullable=True, default="[]")
     task_dependencies = Column(Text, nullable=True)  # JSON list of request IDs this task depends on
     asset_criticality = Column(Enum(AssetCriticality), default=AssetCriticality.HIGH, nullable=False)
     urgency_level = Column(Enum(UrgencyLevel), default=UrgencyLevel.ROUTINE, nullable=False)
@@ -66,7 +67,7 @@ class MaintenanceRequest(Base):
     ai_priority_score = Column(Float, default=50.0)  # 0 to 100
     ai_risk_factor = Column(String(50), default="MODERATE")  # LOW, MODERATE, HIGH, SEVERE
     ai_explanation = Column(Text, nullable=True)
-    readiness_score = Column(Float, default=0.0)  # 0 to 100%
+    readiness_score = Column(Float, nullable=True)
     
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

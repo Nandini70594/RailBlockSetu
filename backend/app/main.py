@@ -1,10 +1,47 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from sqlalchemy import inspect, text
 
 from app.config import settings, warn_if_default_secret_key
 from app.database import engine, Base, SessionLocal
 from app.seed.demo_data import seed_database
+
+def ensure_readiness_columns(database_engine=engine) -> None:
+    clear_legacy_readiness_scores = False
+    column_additions = {
+        "maintenance_requests": {"obtained_safety_requirements": "TEXT"},
+        "maintenance_blocks": {
+            "readiness_verdict": "VARCHAR(30)",
+            "readiness_snapshot": "TEXT",
+        },
+    }
+    with database_engine.begin() as connection:
+        inspector = inspect(connection)
+        for table_name, columns in column_additions.items():
+            existing_columns = {
+                column["name"] for column in inspector.get_columns(table_name)
+            }
+            for column_name, column_type in columns.items():
+                if column_name not in existing_columns:
+                    if (
+                        table_name == "maintenance_requests"
+                        and column_name == "obtained_safety_requirements"
+                    ):
+                        clear_legacy_readiness_scores = True
+                    connection.execute(text(
+                        f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
+                    ))
+                    existing_columns.add(column_name)
+        request_columns = {
+            column["name"]
+            for column in inspector.get_columns("maintenance_requests")
+        }
+        if clear_legacy_readiness_scores and "readiness_score" in request_columns:
+            connection.execute(text(
+                "UPDATE maintenance_requests SET readiness_score = NULL "
+                "WHERE readiness_score IS NOT NULL"
+            ))
 
 # Routers
 from app.routers import (
@@ -25,6 +62,8 @@ async def lifespan(app: FastAPI):
 
     # Initialize database tables
     Base.metadata.create_all(bind=engine)
+    ensure_readiness_columns()
+
     db = SessionLocal()
     try:
         seed_database(db)

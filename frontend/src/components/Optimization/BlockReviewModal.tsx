@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { X, CheckCircle2, XCircle, Pin, Shield, AlertTriangle } from "lucide-react";
+import { X, CheckCircle2, XCircle, Pin, Shield } from "lucide-react";
 import { MaintenanceBlock } from "../../types";
 
 interface BlockReviewModalProps {
@@ -84,6 +84,32 @@ export const BlockReviewModal: React.FC<BlockReviewModalProps> = ({
               </span>
             </div>
           </div>
+
+          {block.readiness_snapshot && (
+            <div className="p-3.5 rounded-xl bg-slate-850 border border-slate-800 text-xs text-slate-300 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white">Readiness: {block.readiness_verdict}</span>
+                <span className="text-[10px] text-slate-400">
+                  Mandatory: {block.readiness_snapshot.mandatory_pillars.join(", ")}
+                </span>
+              </div>
+              {Object.entries(block.readiness_snapshot.pillars).map(([name, pillar]) => (
+                <div key={name} className="flex items-start justify-between gap-3">
+                  <span className="capitalize text-slate-400">{name.replaceAll("_", " ")}</span>
+                  <span className="text-right">
+                    <span className={pillar.status === "PASS" ? "text-emerald-300" : "text-amber-300"}>
+                      {pillar.status}
+                    </span>
+                    {pillar.reasons?.length ? (
+                      <span className="block text-[10px] text-slate-400">
+                        {pillar.reasons.join("; ")}
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Decision Selector */}
           <div>

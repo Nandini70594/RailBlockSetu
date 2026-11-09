@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 import json
 from sqlalchemy.orm import Session
 from app.models.user import User, UserRole, DepartmentType
@@ -11,6 +12,8 @@ from app.models.audit import AuditLog
 from app.utils.security import get_password_hash
 from app.ml.priority_model import priority_engine
 from app.optimization.scheduler import optimizer_scheduler
+
+IST = ZoneInfo("Asia/Kolkata")
 
 def seed_database(db: Session):
     # Check if data already exists
@@ -192,7 +195,7 @@ def seed_database(db: Session):
     db.commit()
 
     # 5. Create Realistic Maintenance Requests
-    now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+    now = datetime.now(IST).replace(tzinfo=None, minute=0, second=0, microsecond=0)
     requests_data = [
         {
             "request_id": "REQ-ENG-2026-001",
@@ -349,7 +352,6 @@ def seed_database(db: Session):
             ai_priority_score=ml_prediction["ai_priority_score"],
             ai_risk_factor=ml_prediction["ai_risk_factor"],
             ai_explanation=ml_prediction["ai_explanation"],
-            readiness_score=85.0
         )
         db.add(req)
     db.commit()

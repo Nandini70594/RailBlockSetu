@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -11,6 +12,7 @@ from app.models.audit import AuditLog
 from app.schemas.optimization import OptimizationTriggerRequest, BlockApprovalRequest, MaintenanceBlockResponse
 from app.utils.security import get_current_user, require_roles
 from app.optimization.scheduler import optimizer_scheduler
+from app.optimization.validator import refresh_schedule_validation
 
 router = APIRouter(
     prefix="/optimization",
@@ -47,6 +49,16 @@ def get_all_blocks(
     blocks = query.order_by(MaintenanceBlock.scheduled_start.asc()).all()
     results = []
     for b in blocks:
+        readiness_snapshot = (
+            json.loads(b.readiness_snapshot)
+            if b.readiness_snapshot is not None
+            else None
+        )
+        conflict_details = (
+            json.loads(b.conflict_details)
+            if b.conflict_details is not None
+            else None
+        )
         results.append(MaintenanceBlockResponse(
             id=b.id,
             block_code=b.block_code,
@@ -62,6 +74,10 @@ def get_all_blocks(
             is_pinned=b.is_pinned,
             or_tools_score=b.or_tools_score,
             approval_notes=b.approval_notes,
+            readiness_verdict=b.readiness_verdict,
+            readiness_snapshot=readiness_snapshot,
+            conflict_detected=b.conflict_detected,
+            conflict_details=conflict_details,
             task_title=b.request.task_title if b.request else "Maintenance Task",
             department=b.request.department if b.request else "Engineering",
             section_code=b.section.section_code if b.section else "CORRIDOR"
@@ -95,6 +111,8 @@ def review_block(
             b.request.current_status = RequestStatus.REJECTED
 
     db.commit()
+    if review_data.status == BlockStatus.APPROVED:
+        refresh_schedule_validation(db)
     db.refresh(b)
 
     # Log to audit feed

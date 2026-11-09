@@ -104,7 +104,9 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
     },
     {
       title: "Resource Readiness",
-      value: `${metrics.resource_readiness_percentage}%`,
+      value: metrics.resource_readiness_percentage === null
+        ? "N/A"
+        : `${metrics.resource_readiness_percentage}%`,
       subtitle: "Gangs, Machines & Spares",
       icon: Gauge,
       color: "bg-sky-50 text-sky-800 border-sky-200",
@@ -120,7 +122,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
       color: "bg-indigo-50 text-indigo-800 border-indigo-200",
       iconColor: "text-indigo-600",
       tab: "timeline",
-      tooltip: "Corridor time slots between high-speed train paths."
+      tooltip: "Train-free gaps at least the minimum useful duration, after approved blocks."
     },
     {
       title: "Sections Under Work",
@@ -366,7 +368,9 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                 <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
                   Corridor Block Utilization
                 </h3>
-                <p className="text-xs text-slate-500">Hours requested vs granted</p>
+                <p className="text-xs text-slate-500">
+                  Scheduled maintenance vs train-free capacity
+                </p>
               </div>
               <TrendingUp className="w-4 h-4 text-emerald-600" />
             </div>
@@ -384,7 +388,9 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                 </div>
                 <div className="p-2.5 rounded-lg bg-white border border-slate-200">
                   <span className="text-slate-500 text-[10px]">Utilization Rate:</span>
-                  <div className="font-bold text-blue-700">{metrics.block_utilization.utilization_percentage}%</div>
+                  <div className="font-bold text-blue-700">                  {metrics.block_utilization.utilization_percentage === null
+                    ? "N/A"
+                    : `${metrics.block_utilization.utilization_percentage}%`}</div>
                 </div>
               </div>
             </div>

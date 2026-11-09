@@ -109,6 +109,7 @@ def create_request(
         required_machinery=request_data.required_machinery,
         required_materials=request_data.required_materials,
         safety_requirements=request_data.safety_requirements,
+        obtained_safety_requirements=request_data.obtained_safety_requirements,
         task_dependencies=request_data.task_dependencies,
         asset_criticality=request_data.asset_criticality,
         urgency_level=request_data.urgency_level,
@@ -116,7 +117,6 @@ def create_request(
         ai_priority_score=ml_eval["ai_priority_score"],
         ai_risk_factor=ml_eval["ai_risk_factor"],
         ai_explanation=ml_eval["ai_explanation"],
-        readiness_score=80.0,
         created_by_id=current_user.id
     )
     

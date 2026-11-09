@@ -36,6 +36,7 @@ export interface MaintenanceRequest {
   required_machinery?: string;
   required_materials?: string;
   safety_requirements?: string;
+  obtained_safety_requirements?: string;
   task_dependencies?: string;
   asset_criticality: AssetCriticality;
   urgency_level: UrgencyLevel;
@@ -69,6 +70,8 @@ export interface MaintenanceBlock {
   task_title?: string;
   department?: string;
   section_code?: string;
+  readiness_verdict?: "READY" | "PARTIALLY_READY" | "NOT_READY";
+  readiness_snapshot?: ReadinessReport | null;
 }
 
 export interface Resource {
@@ -139,7 +142,7 @@ export interface DashboardMetrics {
   proposed_maintenance_blocks: number;
   completed_maintenance_tasks: number;
   critical_maintenance_tasks: number;
-  resource_readiness_percentage: number;
+  resource_readiness_percentage: number | null;
   available_maintenance_windows: number;
   railway_sections_under_maintenance: number;
   current_scheduling_conflicts: number;
@@ -149,21 +152,27 @@ export interface DashboardMetrics {
   block_utilization: {
     hours_requested: number;
     hours_granted: number;
-    utilization_percentage: number;
+    utilization_percentage: number | null;
+    scheduled_minutes: number;
+    usable_window_minutes: number;
   };
 }
 
 export interface ReadinessPillar {
-  score: number;
+  score: number | null;
   status: string;
   notes?: string;
+  reasons?: string[];
   [key: string]: any;
 }
 
 export interface ReadinessReport {
   request_id: string;
-  overall_readiness_score: number;
+  overall_readiness_score: number | null;
   readiness_grade: "READY_FOR_EXECUTION" | "CONDITIONAL_APPROVAL" | "CRITICAL_DEFICIT";
+  verdict: "READY" | "PARTIALLY_READY" | "NOT_READY";
+  mandatory_pillars: string[];
+  failing_pillars: string[];
   pillars: {
     staff: ReadinessPillar;
     machinery: ReadinessPillar;
@@ -172,6 +181,7 @@ export interface ReadinessReport {
     safety_isolation: ReadinessPillar;
   };
   recommendation: string;
+  recommended_action: string;
 }
 
 export interface TopologyNode {

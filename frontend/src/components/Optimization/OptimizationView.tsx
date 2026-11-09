@@ -161,6 +161,20 @@ export const OptimizationView: React.FC = () => {
           </div>
         </div>
       )}
+      {solveStats?.excluded?.length > 0 && (
+        <div className="p-4 rounded-xl bg-rose-950/30 border border-rose-800/50 space-y-3">
+          <h3 className="text-xs font-bold text-rose-300">
+            Requests excluded by readiness ({solveStats.excluded.length})
+          </h3>
+          {solveStats.excluded.map((item: any) => (
+            <div key={item.request_id} className="text-xs text-slate-300">
+              <span className="font-semibold text-white">{item.task_title}</span>
+              <span className="text-rose-300"> — {item.failing_pillars.join(", ")}</span>
+              <p className="mt-1 text-slate-400">{item.recommended_action}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Filter Tabs */}
       <div className="flex items-center justify-between">

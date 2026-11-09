@@ -15,7 +15,7 @@ import { NetworkTopologyView } from "./components/Dashboard/NetworkTopologyView"
 import { AdminView } from "./components/Admin/AdminView";
 import { DashboardMetrics, AuditLog } from "./types";
 import { api } from "./api/client";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, Variants } from "framer-motion";
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<string>("dashboard");
@@ -43,13 +43,13 @@ function AppContent() {
 
   // Derive badge counts from metrics
   const pendingCount = metrics?.pending_requests ?? 0;
-  const disruptionCount = metrics?.active_disruptions ?? 0;
+  const disruptionCount = metrics?.upcoming_disruptions ?? 0;
 
   // Sidebar width classes
   const sidebarWidth = sidebarCollapsed ? "w-20" : "w-64";
   const mainMargin = sidebarCollapsed ? "ml-20" : "ml-64";
 
-  const pageVariants = {
+  const pageVariants: Variants = {
     initial: { opacity: 0, y: 12 },
     animate: { opacity: 1, y: 0, transition: { duration: 0.22, ease: "easeOut" } },
     exit: { opacity: 0, y: -8, transition: { duration: 0.15 } },
@@ -101,7 +101,7 @@ function AppContent() {
                   metrics={metrics}
                   activityLogs={activityLogs}
                   onNavigate={setActiveTab}
-                  onTriggerOptimization={() => setShowOptimizationWorkflow(true)}
+                  onOpenOptimizationWorkflow={() => setShowOptimizationWorkflow(true)}
                 />
               )}
               {activeTab === "requests" && <MaintenanceRequestsView />}

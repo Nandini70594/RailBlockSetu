@@ -29,6 +29,7 @@ export const RequestModal: React.FC<RequestModalProps> = ({
     required_machinery: initialData?.required_machinery || "[\"CSM-952\"]",
     required_materials: initialData?.required_materials || "[\"PSC-60KG\"]",
     safety_requirements: initialData?.safety_requirements || "[\"Track possession memo\", \"Banner flag at 600m\"]",
+    obtained_safety_requirements: initialData?.obtained_safety_requirements || "[]",
     task_dependencies: initialData?.task_dependencies || "[]",
     asset_criticality: initialData?.asset_criticality || "HIGH",
     urgency_level: initialData?.urgency_level || "ROUTINE",
@@ -319,7 +320,7 @@ export const RequestModal: React.FC<RequestModalProps> = ({
           </div>
 
           {/* Section 6: Safety Requirements & Task Dependencies */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
                 Safety & Isolation Protocols (JSON list)
@@ -329,6 +330,19 @@ export const RequestModal: React.FC<RequestModalProps> = ({
                 value={formData.safety_requirements}
                 onChange={(e) => setFormData({ ...formData, safety_requirements: e.target.value })}
                 placeholder='["Track possession memo", "25kV Power Block"]'
+                className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-xs font-mono focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Safety Clearances Obtained (JSON list)
+              </label>
+              <input
+                type="text"
+                value={formData.obtained_safety_requirements}
+                onChange={(e) => setFormData({ ...formData, obtained_safety_requirements: e.target.value })}
+                placeholder='["Track possession memo"]'
                 className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-xs font-mono focus:ring-2 focus:ring-cyan-500 focus:outline-none"
               />
             </div>

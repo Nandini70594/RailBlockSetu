@@ -20,6 +20,7 @@ class MaintenanceRequestBase(BaseModel):
     required_machinery: Optional[str] = "[]"
     required_materials: Optional[str] = "[]"
     safety_requirements: Optional[str] = "[]"
+    obtained_safety_requirements: Optional[str] = "[]"
     task_dependencies: Optional[str] = "[]"
     asset_criticality: AssetCriticality = AssetCriticality.HIGH
     urgency_level: UrgencyLevel = UrgencyLevel.ROUTINE
@@ -43,6 +44,7 @@ class MaintenanceRequestUpdate(BaseModel):
     required_machinery: Optional[str] = None
     required_materials: Optional[str] = None
     safety_requirements: Optional[str] = None
+    obtained_safety_requirements: Optional[str] = None
     task_dependencies: Optional[str] = None
     asset_criticality: Optional[AssetCriticality] = None
     urgency_level: Optional[UrgencyLevel] = None
