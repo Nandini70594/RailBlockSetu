@@ -8,9 +8,10 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.request import MaintenanceRequest
 from app.models.resource import Resource, ResourceType
-from app.models.schedule import BlockStatus, MaintenanceBlock, TrackType
+from app.models.schedule import BlockStatus, MaintenanceBlock
 from app.models.train import TrainSchedule
 from app.optimization.train_windows import build_train_intervals
+from app.optimization.compatibility import are_compatible
 
 
 ACTIVE_BLOCK_STATUSES = (
@@ -22,18 +23,6 @@ ACTIVE_BLOCK_STATUSES = (
 
 def _overlaps(start_a: datetime, end_a: datetime, start_b: datetime, end_b: datetime) -> bool:
     return start_a < end_b and end_a > start_b
-
-
-def _track_types_conflict(track_a: Any, track_b: Any) -> bool:
-    value_a = track_a.value if isinstance(track_a, TrackType) else str(track_a)
-    value_b = track_b.value if isinstance(track_b, TrackType) else str(track_b)
-    if "BOTH" in (value_a, value_b):
-        return True
-    if value_a == value_b:
-        return True
-    return {value_a, value_b} != {"UP_LINE", "DOWN_LINE"} and (
-        "YARD" in (value_a, value_b)
-    )
 
 
 def _string_requirements(raw: Optional[str]) -> List[str]:
@@ -114,25 +103,27 @@ def validate_schedule(
         request_a = requests.get(first.request_id)
         for second in active[index + 1:]:
             start_b, end_b = _interval_for_block(second)
+            request_b = requests.get(second.request_id)
             if (
                 first.section_id == second.section_id
-                and _track_types_conflict(first.track_type, second.track_type)
+                and request_a is not None
+                and request_b is not None
+                and not are_compatible(request_a, request_b)[0]
                 and _overlaps(start_a, end_a, start_b, end_b)
             ):
                 add_violation(
                     "section_overlap",
                     (first, second),
-                    f"Blocks overlap on incompatible tracks in section {first.section_id}.",
+                    are_compatible(request_a, request_b)[1],
                     section_id=first.section_id,
                 )
 
-            request_b = requests.get(second.request_id)
-            machines_a = set(_string_requirements(
+            machines_a = {machine.casefold() for machine in _string_requirements(
                 request_a.required_machinery if request_a else None
-            ))
-            machines_b = set(_string_requirements(
+            )}
+            machines_b = {machine.casefold() for machine in _string_requirements(
                 request_b.required_machinery if request_b else None
-            ))
+            )}
             shared_machines = sorted(machines_a & machines_b)
             if shared_machines and _overlaps(start_a, end_a, start_b, end_b):
                 add_violation(

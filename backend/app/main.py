@@ -6,6 +6,7 @@ from sqlalchemy import inspect, text
 from app.config import settings, warn_if_default_secret_key
 from app.database import engine, Base, SessionLocal
 from app.seed.demo_data import seed_database
+from app.models.work_package import WorkPackage
 
 def ensure_readiness_columns(database_engine=engine) -> None:
     clear_legacy_readiness_scores = False
@@ -14,11 +15,19 @@ def ensure_readiness_columns(database_engine=engine) -> None:
         "maintenance_blocks": {
             "readiness_verdict": "VARCHAR(30)",
             "readiness_snapshot": "TEXT",
+            "work_package_id": "INTEGER",
+        },
+        "disruptions": {
+            "schedule_snapshot": "TEXT",
+            "replan_diff": "TEXT",
         },
     }
     with database_engine.begin() as connection:
         inspector = inspect(connection)
+        existing_tables = set(inspector.get_table_names())
         for table_name, columns in column_additions.items():
+            if table_name not in existing_tables:
+                continue
             existing_columns = {
                 column["name"] for column in inspector.get_columns(table_name)
             }

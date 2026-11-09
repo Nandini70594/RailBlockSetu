@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 from app.models.disruption import DisruptionType, DisruptionSeverity
 
@@ -27,6 +27,8 @@ class DisruptionResponse(BaseModel):
     replanned_at: Optional[datetime] = None
     affected_blocks_count: int
     preserved_blocks_count: int
+    schedule_snapshot: Optional[str] = None
+    replan_diff: Optional[str] = None
     created_at: datetime
 
     class Config:

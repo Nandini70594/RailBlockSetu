@@ -8,7 +8,8 @@ import {
   Disruption,
   AuditLog,
   ReadinessReport,
-  NetworkTopology
+  NetworkTopology,
+  WorkPackage
 } from "../types";
 
 const API_BASE = "/api/v1";
@@ -130,6 +131,14 @@ export const api = {
     const params = new URLSearchParams();
     if (status && status !== "ALL") params.append("status", status);
     const res = await fetch(`${API_BASE}/optimization/blocks?${params.toString()}`, { headers: getHeaders() });
+    return res.json();
+  },
+
+  async getWorkPackages(): Promise<WorkPackage[]> {
+    const res = await fetch(`${API_BASE}/optimization/work-packages`, {
+      headers: getHeaders(),
+    });
+    if (!res.ok) throw new Error("Failed to load work packages");
     return res.json();
   },
 

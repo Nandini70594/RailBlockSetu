@@ -251,6 +251,9 @@ def test_readiness_migration_adds_columns_to_existing_database():
             "CREATE TABLE maintenance_blocks (id INTEGER PRIMARY KEY)"
         )
         connection.exec_driver_sql(
+            "CREATE TABLE disruptions (id INTEGER PRIMARY KEY)"
+        )
+        connection.exec_driver_sql(
             "INSERT INTO maintenance_requests (readiness_score) VALUES (85.0)"
         )
 
@@ -262,6 +265,9 @@ def test_readiness_migration_adds_columns_to_existing_database():
     }
     assert {"readiness_verdict", "readiness_snapshot"} <= {
         column["name"] for column in inspector.get_columns("maintenance_blocks")
+    }
+    assert {"schedule_snapshot", "replan_diff"} <= {
+        column["name"] for column in inspector.get_columns("disruptions")
     }
     with engine.connect() as connection:
         assert connection.exec_driver_sql(

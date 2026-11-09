@@ -16,6 +16,7 @@ class MaintenanceBlockResponse(BaseModel):
     block_code: str
     request_id: int
     section_id: int
+    work_package_id: Optional[int] = None
     scheduled_start: datetime
     scheduled_end: datetime
     duration_hours: float

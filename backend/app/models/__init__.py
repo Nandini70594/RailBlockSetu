@@ -6,6 +6,7 @@ from app.models.schedule import MaintenanceBlock, BlockStatus, TrackType
 from app.models.train import TrainSchedule, TrainType
 from app.models.disruption import Disruption, DisruptionType, DisruptionSeverity
 from app.models.audit import AuditLog
+from app.models.work_package import WorkPackage
 
 __all__ = [
     "User",
@@ -28,4 +29,5 @@ __all__ = [
     "DisruptionType",
     "DisruptionSeverity",
     "AuditLog",
+    "WorkPackage",
 ]

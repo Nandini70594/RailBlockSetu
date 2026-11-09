@@ -57,6 +57,7 @@ export interface MaintenanceBlock {
   block_code: string;
   request_id: number;
   section_id: number;
+  work_package_id?: number | null;
   scheduled_start: string;
   scheduled_end: string;
   duration_hours: number;
@@ -72,6 +73,20 @@ export interface MaintenanceBlock {
   section_code?: string;
   readiness_verdict?: "READY" | "PARTIALLY_READY" | "NOT_READY";
   readiness_snapshot?: ReadinessReport | null;
+}
+
+export interface WorkPackage {
+  id: number;
+  section_id: number;
+  section_code: string | null;
+  departments: string[];
+  included_task_ids: number[];
+  shared_window_start: string;
+  shared_window_end: string;
+  expected_utilization: number;
+  compatibility_status: string;
+  compatibility_reasons: string[];
+  tasks: { id: number; title: string }[];
 }
 
 export interface Resource {
@@ -121,7 +136,69 @@ export interface Disruption {
   replanned_at?: string;
   affected_blocks_count: number;
   preserved_blocks_count: number;
+  schedule_snapshot?: string | null;
+  replan_diff?: string | null;
   created_at: string;
+}
+
+export interface ReplanDiff {
+  retained: {
+    task_id: number;
+    task_title: string | null;
+    block_id: number;
+    start: string;
+    end: string;
+    status: string;
+  }[];
+  rescheduled: {
+    task_id: number;
+    task_title: string | null;
+    block_id: number;
+    old_start: string;
+    new_start: string;
+    old_end: string;
+    new_end: string;
+    delta_minutes: number;
+    status: string;
+  }[];
+  newly_assigned: {
+    task_id: number;
+    task_title: string | null;
+    block_id: number;
+    new_start: string;
+    new_end: string;
+    status: string;
+  }[];
+  unschedulable: {
+    task_id: number;
+    task_title: string | null;
+    reason: string;
+  }[];
+  resource_changes: {
+    task_id: number;
+    old_resources: Record<string, unknown>;
+    new_resources: Record<string, unknown>;
+  }[];
+  summary: {
+    retained_count: number;
+    rescheduled_count: number;
+    newly_assigned_count: number;
+    unschedulable_count: number;
+    resource_change_count: number;
+    total_movement_minutes: number;
+  };
+}
+
+export interface ReplanSnapshotItem {
+  task_id: number;
+  task_code: string | null;
+  task_title: string | null;
+  block_id: number;
+  start: string;
+  end: string;
+  section_id: number;
+  assigned_resources: Record<string, unknown>;
+  status: string;
 }
 
 export interface AuditLog {

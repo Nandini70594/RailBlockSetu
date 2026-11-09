@@ -11,7 +11,9 @@ from app.models.schedule import MaintenanceBlock, BlockStatus, TrackType
 from app.models.train import TrainSchedule
 from app.models.disruption import Disruption
 from app.models.audit import AuditLog
+from app.models.work_package import WorkPackage
 from app.optimization.readiness import readiness_validator
+from app.optimization.compatibility import are_compatible
 from app.optimization.train_windows import (
     build_train_intervals,
     has_train_free_gap,
@@ -29,7 +31,9 @@ class BlockOptimizationScheduler:
         db: Session,
         horizon_hours: int = 72,
         pinned_block_ids: Optional[List[int]] = None,
-        disruption: Optional[Disruption] = None
+        disruption: Optional[Disruption] = None,
+        stability_snapshot: Optional[List[Dict[str, Any]]] = None,
+        directly_affected_block_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """
         Google OR-Tools CP-SAT multi-objective maintenance block scheduler.
@@ -148,12 +152,17 @@ class BlockOptimizationScheduler:
                 offset_mins = int((b.scheduled_start - base_time).total_seconds() / 60)
                 if 0 <= offset_mins < horizon_minutes:
                     pinned_start_times[b.request_id] = offset_mins
+        prior_by_task = {
+            item["task_id"]: item
+            for item in (stability_snapshot or [])
+            if item.get("task_id") is not None
+        }
+        directly_affected = set(directly_affected_block_ids or [])
 
         # 3. Model Decision Variables
         task_vars = {}
         task_info = {}
         soft_train_penalties = []
-        section_intervals: Dict[int, List[Any]] = {}
         machine_intervals: Dict[str, List[Tuple[Any, int]]] = {}
         department_intervals: Dict[str, List[Tuple[Any, int]]] = {}
 
@@ -276,12 +285,6 @@ class BlockOptimizationScheduler:
             }
             task_info[rid] = req
 
-            # Group for Section No-Overlap (Same track section cannot have multiple non-synergized maintenance)
-            sec_id = req.section_id or 1
-            if sec_id not in section_intervals:
-                section_intervals[sec_id] = []
-            section_intervals[sec_id].append(interval_var)
-
             # Machinery capacity tracking
             machines = []
             if req.required_machinery:
@@ -290,7 +293,7 @@ class BlockOptimizationScheduler:
                 except Exception:
                     machines = [req.required_machinery]
             for m in machines:
-                m_key = str(m).strip()
+                m_key = str(m).strip().casefold()
                 if m_key not in machine_intervals:
                     machine_intervals[m_key] = []
                 machine_intervals[m_key].append((interval_var, 1))
@@ -302,10 +305,101 @@ class BlockOptimizationScheduler:
             staff_req = req.required_staff
             department_intervals[dept].append((interval_var, staff_req))
 
-        # 4. Add Section Non-Overlap Constraints
-        for sec_id, intervals in section_intervals.items():
-            if len(intervals) > 1:
-                model.AddNoOverlap(intervals)
+        # 4. Enforce section occupancy pairwise; compatible cross-department
+        # work can overlap and earns an objective bonus for shared minutes.
+        work_package_bonus_terms = []
+        stability_penalties = []
+        prior_block_by_task = {
+            item["task_id"]: item for item in prior_by_task.values()
+        }
+        old_block_ids_by_task = {
+            item["task_id"]: item.get("block_id")
+            for item in prior_by_task.values()
+        }
+        request_ids = list(task_vars)
+        for index, first_id in enumerate(request_ids):
+            first = task_info[first_id]
+            first_vars = task_vars[first_id]
+            for second_id in request_ids[index + 1:]:
+                second = task_info[second_id]
+                if first_vars["section_id"] != task_vars[second_id]["section_id"]:
+                    continue
+                compatible, _ = are_compatible(first, second)
+                second_vars = task_vars[second_id]
+                if not compatible:
+                    first_before_second = model.NewBoolVar(
+                        f"task_{first_id}_before_{second_id}"
+                    )
+                    second_before_first = model.NewBoolVar(
+                        f"task_{second_id}_before_{first_id}"
+                    )
+                    model.Add(
+                        first_vars["end"] <= second_vars["start"]
+                    ).OnlyEnforceIf(first_before_second)
+                    model.Add(
+                        second_vars["end"] <= first_vars["start"]
+                    ).OnlyEnforceIf(second_before_first)
+                    model.AddBoolOr([first_before_second, second_before_first])
+                    continue
+
+                overlap_start = model.NewIntVar(
+                    0, horizon_minutes, f"overlap_start_{first_id}_{second_id}"
+                )
+                overlap_end = model.NewIntVar(
+                    0, horizon_minutes, f"overlap_end_{first_id}_{second_id}"
+                )
+                model.AddMaxEquality(
+                    overlap_start,
+                    [first_vars["start"], second_vars["start"]],
+                )
+                model.AddMinEquality(
+                    overlap_end,
+                    [first_vars["end"], second_vars["end"]],
+                )
+                overlap_delta = model.NewIntVar(
+                    -horizon_minutes,
+                    horizon_minutes,
+                    f"overlap_delta_{first_id}_{second_id}",
+                )
+                model.Add(overlap_delta == overlap_end - overlap_start)
+                overlap_minutes = model.NewIntVar(
+                    0, horizon_minutes, f"overlap_minutes_{first_id}_{second_id}"
+                )
+                model.AddMaxEquality(overlap_minutes, [overlap_delta, 0])
+                work_package_bonus_terms.append(
+                    -overlap_minutes * settings.COMPATIBILITY_OVERLAP_BONUS_WEIGHT
+                )
+
+        for rid, tv in task_vars.items():
+            prior = prior_block_by_task.get(rid)
+            if prior is None or not prior.get("start"):
+                continue
+            old_start = datetime.fromisoformat(prior["start"])
+            old_offset = int((old_start - base_time).total_seconds() // 60)
+            movement = model.NewIntVar(
+                0,
+                max(
+                    horizon_minutes,
+                    abs(old_offset),
+                    abs(horizon_minutes - old_offset),
+                ),
+                f"movement_minutes_{rid}",
+            )
+            model.AddAbsEquality(movement, tv["start"] - old_offset)
+            moved = model.NewBoolVar(f"task_moved_{rid}")
+            model.Add(movement == 0).OnlyEnforceIf(moved.Not())
+            model.Add(movement >= 1).OnlyEnforceIf(moved)
+            stability_penalties.append(
+                movement * settings.REPLAN_MOVE_MINUTE_PENALTY
+            )
+            fixed_penalty = settings.REPLAN_MOVE_FIXED_PENALTY
+            old_block_id = old_block_ids_by_task.get(rid)
+            if (
+                prior.get("status") == BlockStatus.APPROVED.value
+                and old_block_id not in directly_affected
+            ):
+                fixed_penalty += settings.REPLAN_UNAFFECTED_APPROVED_MOVE_PENALTY
+            stability_penalties.append(moved * fixed_penalty)
 
         # 5. Add Cumulative Resource Constraints for Machinery
         for m_key, items in machine_intervals.items():
@@ -316,9 +410,12 @@ class BlockOptimizationScheduler:
                 model.AddCumulative(intervals, demands, 1)
 
         # 6. Add Cumulative Constraints for Gang Personnel
-        dept_staff_caps = {"Engineering": 35, "TRD": 25, "S&T": 20}
+        dept_staff_caps = settings.COMPATIBILITY_RULES["department_crew_limits"]
         for dept, items in department_intervals.items():
-            cap = dept_staff_caps.get(dept, 30)
+            cap = dept_staff_caps.get(
+                dept,
+                settings.COMPATIBILITY_RULES["default_crew_limit"],
+            )
             intervals = [it[0] for it in items]
             demands = [it[1] for it in items]
             model.AddCumulative(intervals, demands, cap)
@@ -349,6 +446,8 @@ class BlockOptimizationScheduler:
             # Higher priority = stronger pull toward earlier start
             objective_terms.append(tv["start"] * weight)
         objective_terms.extend(soft_train_penalties)
+        objective_terms.extend(work_package_bonus_terms)
+        objective_terms.extend(stability_penalties)
 
         model.Minimize(sum(objective_terms))
 
@@ -386,11 +485,18 @@ class BlockOptimizationScheduler:
                 ).first()
                 
                 if existing_b:
+                    old_block_start = existing_b.scheduled_start
                     existing_b.scheduled_start = block_start_dt
                     existing_b.scheduled_end = block_end_dt
                     existing_b.duration_hours = round(tv["duration"] / 60.0, 1)
                     existing_b.or_tools_score = round(float(tv["priority_score"]), 1)
-                    if existing_b.status != BlockStatus.APPROVED:
+                    if (
+                        stability_snapshot is not None
+                        and old_block_start != block_start_dt
+                    ):
+                        existing_b.status = BlockStatus.PROPOSED
+                        existing_b.is_pinned = False
+                    elif existing_b.status != BlockStatus.APPROVED:
                         existing_b.status = BlockStatus.PROPOSED
                     target_b = existing_b
                 else:
@@ -443,10 +549,24 @@ class BlockOptimizationScheduler:
                 action="RUN_OPTIMIZATION",
                 department="All",
                 badge_type="success",
-                details=f"CP-SAT scheduled {len(result_blocks)} blocks across {len(section_intervals)} sections with status {solver.StatusName(solver_status)}."
+                details=(
+                    f"CP-SAT scheduled {len(result_blocks)} blocks across "
+                    f"{len({tv['section_id'] for tv in task_vars.values()})} "
+                    f"sections with status {solver.StatusName(solver_status)}."
+                )
             )
             db.add(audit)
             db.commit()
+            packages = rebuild_work_packages(db)
+            packages_by_request = {
+                task_id: package["id"]
+                for package in packages
+                for task_id in package["included_task_ids"]
+            }
+            for result_block in result_blocks:
+                result_block["work_package_id"] = packages_by_request.get(
+                    result_block["request_id"]
+                )
         elif task_vars:
             for rid, req in task_info.items():
                 unscheduled.append({
@@ -466,9 +586,112 @@ class BlockOptimizationScheduler:
             "objective_value": solver.ObjectiveValue() if is_success else None,
             "blocks_scheduled": len(result_blocks),
             "schedule": result_blocks,
+            "work_packages": packages if is_success else [],
             "unscheduled": unscheduled,
             "excluded": excluded,
             "train_intervals_checked": train_intervals_checked,
         }
 
 optimizer_scheduler = BlockOptimizationScheduler()
+
+
+def rebuild_work_packages(db: Session) -> List[Dict[str, Any]]:
+    for block in db.query(MaintenanceBlock).all():
+        block.work_package_id = None
+    db.flush()
+    active_blocks = db.query(MaintenanceBlock).filter(
+        MaintenanceBlock.status.in_([
+            BlockStatus.PROPOSED,
+            BlockStatus.APPROVED,
+            BlockStatus.IN_PROGRESS,
+        ])
+    ).order_by(MaintenanceBlock.scheduled_start, MaintenanceBlock.id).all()
+    db.query(WorkPackage).delete(synchronize_session=False)
+    db.flush()
+
+    candidates = [
+        (block, block.request)
+        for block in active_blocks
+        if block.request is not None
+    ]
+    groups: List[List[Tuple[MaintenanceBlock, MaintenanceRequest]]] = []
+    for candidate in candidates:
+        block, request = candidate
+        matching_group = None
+        for group in groups:
+            if group[0][0].section_id != block.section_id:
+                continue
+            group_start = max(
+                [block.scheduled_start]
+                + [member.scheduled_start for member, _ in group]
+            )
+            group_end = min(
+                [block.scheduled_end]
+                + [member.scheduled_end for member, _ in group]
+            )
+            if group_start >= group_end:
+                continue
+            if all(are_compatible(request, member_request)[0]
+                   for _, member_request in group):
+                matching_group = group
+                break
+        if matching_group is None:
+            groups.append([candidate])
+        else:
+            matching_group.append(candidate)
+
+    packages: List[Dict[str, Any]] = []
+    for group in groups:
+        if len(group) < 2:
+            continue
+        blocks = [block for block, _ in group]
+        requests = [request for _, request in group]
+        window_start = max(block.scheduled_start for block in blocks)
+        window_end = min(block.scheduled_end for block in blocks)
+        window_minutes = (window_end - window_start).total_seconds() / 60
+        if window_minutes <= 0:
+            continue
+        reasons = sorted({
+            are_compatible(request_a, request_b)[1]
+            for index, request_a in enumerate(requests)
+            for request_b in requests[index + 1:]
+        })
+        task_ids = [request.id for request in requests]
+        package = WorkPackage(
+            section_id=blocks[0].section_id,
+            departments=json.dumps(sorted({request.department for request in requests})),
+            included_task_ids=json.dumps(task_ids),
+            shared_window_start=window_start,
+            shared_window_end=window_end,
+            expected_utilization=(
+                sum(
+                    (block.scheduled_end - block.scheduled_start).total_seconds()
+                    / 60
+                    for block in blocks
+                )
+                / window_minutes
+            ),
+            compatibility_status="COMPATIBLE",
+            compatibility_reasons=json.dumps(reasons),
+        )
+        db.add(package)
+        db.flush()
+        for block in blocks:
+            block.work_package_id = package.id
+        packages.append({
+            "id": package.id,
+            "section_id": package.section_id,
+            "departments": json.loads(package.departments),
+            "included_task_ids": task_ids,
+            "shared_window_start": package.shared_window_start.isoformat(),
+            "shared_window_end": package.shared_window_end.isoformat(),
+            "expected_utilization": package.expected_utilization,
+            "compatibility_status": package.compatibility_status,
+            "compatibility_reasons": reasons,
+            "tasks": [
+                {"id": request.id, "title": request.task_title}
+                for request in requests
+            ],
+        })
+    db.commit()
+    return packages

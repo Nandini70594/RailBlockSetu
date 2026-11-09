@@ -9,9 +9,10 @@ from app.models.schedule import MaintenanceBlock, BlockStatus
 from app.models.request import MaintenanceRequest, RequestStatus
 from app.models.user import User, UserRole
 from app.models.audit import AuditLog
+from app.models.work_package import WorkPackage
 from app.schemas.optimization import OptimizationTriggerRequest, BlockApprovalRequest, MaintenanceBlockResponse
 from app.utils.security import get_current_user, require_roles
-from app.optimization.scheduler import optimizer_scheduler
+from app.optimization.scheduler import optimizer_scheduler, rebuild_work_packages
 from app.optimization.validator import refresh_schedule_validation
 
 router = APIRouter(
@@ -64,6 +65,7 @@ def get_all_blocks(
             block_code=b.block_code,
             request_id=b.request_id,
             section_id=b.section_id,
+            work_package_id=b.work_package_id,
             scheduled_start=b.scheduled_start,
             scheduled_end=b.scheduled_end,
             duration_hours=b.duration_hours,
@@ -83,6 +85,38 @@ def get_all_blocks(
             section_code=b.section.section_code if b.section else "CORRIDOR"
         ))
     return results
+
+
+@router.get("/work-packages")
+def get_work_packages(db: Session = Depends(get_db)):
+    packages = db.query(WorkPackage).order_by(
+        WorkPackage.shared_window_start.asc(),
+        WorkPackage.id.asc(),
+    ).all()
+    return [
+        {
+            "id": package.id,
+            "section_id": package.section_id,
+            "section_code": (
+                package.section.section_code if package.section else None
+            ),
+            "departments": json.loads(package.departments),
+            "included_task_ids": json.loads(package.included_task_ids),
+            "shared_window_start": package.shared_window_start.isoformat(),
+            "shared_window_end": package.shared_window_end.isoformat(),
+            "expected_utilization": package.expected_utilization,
+            "compatibility_status": package.compatibility_status,
+            "compatibility_reasons": json.loads(package.compatibility_reasons),
+            "tasks": [
+                {"id": request_id, "title": request.task_title}
+                for request_id in json.loads(package.included_task_ids)
+                if (request := db.query(MaintenanceRequest).filter(
+                    MaintenanceRequest.id == request_id
+                ).first()) is not None
+            ],
+        }
+        for package in packages
+    ]
 
 @router.post("/blocks/{block_id}/review")
 def review_block(
@@ -111,6 +145,7 @@ def review_block(
             b.request.current_status = RequestStatus.REJECTED
 
     db.commit()
+    rebuild_work_packages(db)
     if review_data.status == BlockStatus.APPROVED:
         refresh_schedule_validation(db)
     db.refresh(b)

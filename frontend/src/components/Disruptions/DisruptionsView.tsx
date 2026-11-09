@@ -20,7 +20,7 @@ import {
   XCircle,
   HelpCircle
 } from "lucide-react";
-import { Disruption } from "../../types";
+import { Disruption, ReplanDiff, ReplanSnapshotItem } from "../../types";
 import { api } from "../../api/client";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../Shared/ToastContext";
@@ -34,6 +34,26 @@ export const DisruptionsView: React.FC = () => {
   const [replanningId, setReplanningId] = useState<number | null>(null);
   const [replanResult, setReplanResult] = useState<any>(null);
   const [diffViewPhase, setDiffViewPhase] = useState<"BEFORE" | "DISRUPTION" | "AFTER">("AFTER");
+
+  const loadSavedComparison = (disruption: Disruption) => {
+    if (!disruption.schedule_snapshot || !disruption.replan_diff) return;
+    try {
+      setReplanResult({
+        disruption_code: disruption.disruption_code,
+        disruption_type: disruption.disruption_type,
+        disruption_section_id: disruption.section_id,
+        affected_from: disruption.affected_from,
+        affected_until: disruption.affected_until,
+        message: "Saved server-side comparison loaded.",
+        snapshot: JSON.parse(disruption.schedule_snapshot) as ReplanSnapshotItem[],
+        diff: JSON.parse(disruption.replan_diff) as ReplanDiff,
+      });
+      setDiffViewPhase("AFTER");
+    } catch (error) {
+      showToast("error", "Saved comparison unavailable", "Stored replan comparison is invalid.");
+      console.error(error);
+    }
+  };
 
   // Simulation Form State
   const [showSimModal, setShowSimModal] = useState(false);
@@ -190,33 +210,30 @@ export const DisruptionsView: React.FC = () => {
             </div>
           </div>
 
-          {/* Phase 1: BEFORE */}
+          {/* Comparison phases render from the persisted pre-replan snapshot and server diff. */}
           {diffViewPhase === "BEFORE" && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               className="space-y-3"
             >
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 flex items-center justify-between">
-                <span>Baseline maintenance schedule prior to incident injection.</span>
-                <span className="font-mono font-bold text-slate-900">6 Tasks Planned</span>
-              </div>
+              <p className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700">
+                Stored baseline: {replanResult.snapshot.length} scheduled tasks before replanning.
+              </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="p-3.5 rounded-xl bg-white border border-slate-200 text-xs space-y-1">
-                  <span className="font-mono font-bold text-blue-700">REQ-ENG-001</span>
-                  <div className="font-semibold text-slate-900">Track Geometry Tamping Km 14-19</div>
-                  <div className="text-slate-500 text-[11px]">Slot: 14:00 - 17:00 • NDLS-GZB</div>
-                </div>
-                <div className="p-3.5 rounded-xl bg-white border border-slate-200 text-xs space-y-1">
-                  <span className="font-mono font-bold text-amber-700">REQ-TRD-002</span>
-                  <div className="font-semibold text-slate-900">25kV OHE Contact Wire Re-tensioning</div>
-                  <div className="text-slate-500 text-[11px]">Slot: 18:00 - 20:30 • NZM-TKD</div>
-                </div>
-                <div className="p-3.5 rounded-xl bg-white border border-slate-200 text-xs space-y-1">
-                  <span className="font-mono font-bold text-emerald-700">REQ-ST-003</span>
-                  <div className="font-semibold text-slate-900">Point Machine 104A/B Overhaul</div>
-                  <div className="text-slate-500 text-[11px]">Slot: 22:00 - 00:00 • NDLS-GZB</div>
-                </div>
+                {replanResult.snapshot.map((task: ReplanSnapshotItem) => (
+                  <div key={task.block_id} className="p-3.5 rounded-xl bg-white border border-slate-200 text-xs space-y-1">
+                    <span className="font-mono font-bold text-blue-700">{task.task_code || `TASK-${task.task_id}`}</span>
+                    <div className="font-semibold text-slate-900">{task.task_title || "Maintenance task"}</div>
+                    <div className="text-slate-500 text-[11px]">
+                      {new Date(task.start).toLocaleString()} – {new Date(task.end).toLocaleString()}
+                      {" · Section "}{task.section_id} · {task.status}
+                    </div>
+                    <div className="text-slate-500 text-[10px]">
+                      Resources: {JSON.stringify(task.assigned_resources)}
+                    </div>
+                  </div>
+                ))}
               </div>
             </motion.div>
           )}
@@ -231,23 +248,31 @@ export const DisruptionsView: React.FC = () => {
               <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-center justify-between font-medium">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
-                  <span>Collision Detected: 1 Task collides directly with active corridor incident window!</span>
+                  <span>
+                    {replanResult.snapshot.filter((task: ReplanSnapshotItem) =>
+                      task.section_id === replanResult.disruption_section_id
+                      && new Date(task.start) < new Date(replanResult.affected_until)
+                      && new Date(task.end) > new Date(replanResult.affected_from)
+                    ).length} baseline tasks overlap the disruption window.
+                  </span>
                 </div>
-                <span className="font-bold text-rose-900">COLLISION BLOCKED</span>
+                <span className="font-bold text-rose-900">{replanResult.disruption_type}</span>
               </div>
-
-              <div className="p-4 rounded-xl bg-rose-50/50 border border-rose-200 flex items-center justify-between">
-                <div>
-                  <span className="font-mono text-xs font-bold text-rose-700">COLLIDING TASK: REQ-TRD-002</span>
-                  <h4 className="text-xs font-bold text-slate-900 mt-0.5">25kV OHE Contact Wire Re-tensioning</h4>
-                  <p className="text-[11px] text-slate-600 mt-1">
-                    Scheduled window (18:00-20:30) overlaps directly with {replanResult.disruption_type} emergency possession on section!
-                  </p>
-                </div>
-                <span className="px-2.5 py-1 rounded bg-rose-600 text-white font-bold text-[11px]">
-                  Requires CP-SAT Reschedule
-                </span>
-              </div>
+              {replanResult.snapshot
+                .filter((task: ReplanSnapshotItem) =>
+                  new Date(task.start) < new Date(replanResult.affected_until)
+                  && new Date(task.end) > new Date(replanResult.affected_from)
+                  && task.section_id === replanResult.disruption_section_id
+                )
+                .map((task: ReplanSnapshotItem) => (
+                  <div key={task.block_id} className="p-4 rounded-xl bg-rose-50/50 border border-rose-200">
+                    <span className="font-mono text-xs font-bold text-rose-700">{task.task_code || `TASK-${task.task_id}`}</span>
+                    <h4 className="text-xs font-bold text-slate-900 mt-0.5">{task.task_title || "Maintenance task"}</h4>
+                    <p className="text-[11px] text-slate-600 mt-1">
+                      Baseline slot {new Date(task.start).toLocaleString()} – {new Date(task.end).toLocaleString()} overlaps the disruption on section {task.section_id}.
+                    </p>
+                  </div>
+                ))}
             </motion.div>
           )}
 
@@ -261,44 +286,64 @@ export const DisruptionsView: React.FC = () => {
               <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center justify-between font-medium">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                  <span>Resilient Solver Success: Colliding tasks shifted; all unaffected approved blocks preserved!</span>
+                  <span>Schedule comparison from the saved baseline and computed replan diff.</span>
                 </div>
-                <span className="font-bold text-emerald-900">CP-SAT OPTIMAL</span>
+                <span className="font-bold text-emerald-900">
+                  {replanResult.diff.summary.total_movement_minutes} minutes moved
+                </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                {/* Preserved Blocks */}
-                <div className="p-4 rounded-xl bg-purple-50/60 border border-purple-200 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-purple-900 flex items-center gap-1.5">
-                      <Pin className="w-3.5 h-3.5 text-purple-700 fill-purple-600" />
-                      Preserved Unaffected Blocks
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-purple-200 text-purple-900 font-bold">
-                      PROTECTED
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Blocks on unaffected sections (NDLS-GZB, TKD-PWL, GZB-ALJN) maintained their original approved timings without disruption drift.
-                  </p>
-                </div>
-
-                {/* Rescheduled Blocks */}
-                <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-blue-900 flex items-center gap-1.5">
-                      <RefreshCw className="w-3.5 h-3.5 text-blue-700" />
-                      Gracefully Rescheduled Tasks
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-blue-200 text-blue-900 font-bold">
-                      SLOT SHIFTED
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Impacted activity was automatically shifted past the incident clearing window to 21:30 night shadow possession with verified Gang & Tower Wagon availability.
-                  </p>
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {[
+                  ...replanResult.diff.retained.map((item: any) => ({ ...item, kind: "unchanged" })),
+                  ...replanResult.diff.rescheduled.map((item: any) => ({ ...item, kind: "rescheduled" })),
+                  ...replanResult.diff.newly_assigned.map((item: any) => ({ ...item, kind: "new" })),
+                  ...replanResult.diff.unschedulable.map((item: any) => ({ ...item, kind: "unschedulable" })),
+                ].map((item: any) => {
+                  const styles: Record<string, string> = {
+                    unchanged: "border-emerald-200 bg-emerald-50/60",
+                    rescheduled: "border-blue-200 bg-blue-50/60",
+                    new: "border-cyan-200 bg-cyan-50/60",
+                    unschedulable: "border-rose-200 bg-rose-50/60",
+                  };
+                  const start = item.new_start || item.start;
+                  const end = item.new_end || item.end;
+                  return (
+                    <article key={`${item.kind}-${item.task_id}`} className={`rounded-xl border p-3 text-xs ${styles[item.kind]}`}>
+                      <div className="flex justify-between gap-2">
+                        <strong>{item.task_title || `Task ${item.task_id}`}</strong>
+                        <span className="uppercase font-bold text-[10px]">{item.kind}</span>
+                      </div>
+                      {item.reason ? (
+                        <p className="text-rose-700 mt-1">{item.reason}</p>
+                      ) : (
+                        <p className="text-slate-600 mt-1">
+                          {start ? new Date(start).toLocaleString() : "No new slot"}
+                          {end ? ` – ${new Date(end).toLocaleString()}` : ""}
+                          {item.delta_minutes !== undefined ? ` · Δ ${item.delta_minutes} min` : ""}
+                        </p>
+                      )}
+                    </article>
+                  );
+                })}
               </div>
+              <p className="text-xs text-slate-600">
+                Retained {replanResult.diff.summary.retained_count} · Rescheduled {replanResult.diff.summary.rescheduled_count}
+                {" · New "}{replanResult.diff.summary.newly_assigned_count}
+                {" · Unscheduled "}{replanResult.diff.summary.unschedulable_count}
+              </p>
+              {replanResult.diff.resource_changes.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 space-y-2">
+                  <h4 className="text-xs font-bold text-amber-900">Resource changes</h4>
+                  {replanResult.diff.resource_changes.map((change: any) => (
+                    <div key={change.task_id} className="text-[11px] text-amber-900">
+                      Task {change.task_id}: {JSON.stringify(change.old_resources)}
+                      {" → "}
+                      {JSON.stringify(change.new_resources)}
+                    </div>
+                  ))}
+                </div>
+              )}
             </motion.div>
           )}
         </motion.div>
@@ -347,6 +392,14 @@ export const DisruptionsView: React.FC = () => {
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${replanningId === d.id ? "animate-spin" : ""}`} />
                       <span>{replanningId === d.id ? "Solving Replan..." : "Trigger Disruption Replan"}</span>
+                    </button>
+                  )}
+                  {d.replan_triggered && d.schedule_snapshot && d.replan_diff && (
+                    <button
+                      onClick={() => loadSavedComparison(d)}
+                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold"
+                    >
+                      View Saved Comparison
                     </button>
                   )}
                 </div>

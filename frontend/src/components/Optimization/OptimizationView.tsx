@@ -15,7 +15,7 @@ import {
   Calendar,
   AlertCircle
 } from "lucide-react";
-import { MaintenanceBlock } from "../../types";
+import { MaintenanceBlock, WorkPackage } from "../../types";
 import { api } from "../../api/client";
 import { BlockReviewModal } from "./BlockReviewModal";
 import { useAuth } from "../../context/AuthContext";
@@ -23,6 +23,7 @@ import { useAuth } from "../../context/AuthContext";
 export const OptimizationView: React.FC = () => {
   const { isOperations } = useAuth();
   const [blocks, setBlocks] = useState<MaintenanceBlock[]>([]);
+  const [workPackages, setWorkPackages] = useState<WorkPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [solving, setSolving] = useState(false);
   const [solveStats, setSolveStats] = useState<any>(null);
@@ -33,8 +34,12 @@ export const OptimizationView: React.FC = () => {
   const fetchBlocks = async () => {
     setLoading(true);
     try {
-      const data = await api.getBlocks(activeFilter);
+      const [data, packages] = await Promise.all([
+        api.getBlocks(activeFilter),
+        api.getWorkPackages(),
+      ]);
       setBlocks(data);
+      setWorkPackages(packages);
     } catch (err) {
       console.error(err);
     } finally {
@@ -175,6 +180,52 @@ export const OptimizationView: React.FC = () => {
           ))}
         </div>
       )}
+
+      <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 shadow-xl">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="text-sm font-bold text-white">Work Packages</h3>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Compatible cross-department tasks sharing a section window
+            </p>
+          </div>
+          <Layers className="w-4 h-4 text-cyan-400" />
+        </div>
+        {workPackages.length === 0 ? (
+          <p className="text-xs text-slate-500">No shared work packages in the current schedule.</p>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            {workPackages.map((workPackage) => (
+              <article
+                key={workPackage.id}
+                className="rounded-xl border border-slate-800 bg-slate-950/60 p-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs font-bold text-cyan-300">
+                    WP-{workPackage.id}
+                  </span>
+                  <span className="text-[10px] text-emerald-300">
+                    {workPackage.expected_utilization.toFixed(0)}% utilization
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 mt-2">
+                  {workPackage.section_code || `Section ${workPackage.section_id}`}
+                  {" · "}
+                  {workPackage.departments.join(", ")}
+                </p>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  {workPackage.tasks.map((task) => task.title).join(" + ")}
+                </p>
+                <p className="text-[10px] text-slate-500 font-mono mt-2">
+                  {new Date(workPackage.shared_window_start).toLocaleString()}
+                  {" – "}
+                  {new Date(workPackage.shared_window_end).toLocaleString()}
+                </p>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Filter Tabs */}
       <div className="flex items-center justify-between">

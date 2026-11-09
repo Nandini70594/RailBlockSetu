@@ -39,6 +39,8 @@ class Disruption(Base):
     replanned_at = Column(DateTime, nullable=True)
     affected_blocks_count = Column(Integer, default=0)
     preserved_blocks_count = Column(Integer, default=0)
+    schedule_snapshot = Column(Text, nullable=True)
+    replan_diff = Column(Text, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     

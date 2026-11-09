@@ -25,6 +25,9 @@ class MaintenanceBlock(Base):
     block_code = Column(String(50), unique=True, index=True, nullable=False)
     request_id = Column(Integer, ForeignKey("maintenance_requests.id"), nullable=False)
     section_id = Column(Integer, ForeignKey("railway_sections.id"), nullable=False)
+    work_package_id = Column(
+        Integer, ForeignKey("work_packages.id"), nullable=True, index=True
+    )
     
     scheduled_start = Column(DateTime, nullable=False)
     scheduled_end = Column(DateTime, nullable=False)
@@ -57,3 +60,4 @@ class MaintenanceBlock(Base):
     request = relationship("MaintenanceRequest")
     section = relationship("RailwaySection")
     approved_by = relationship("User")
+    work_package = relationship("WorkPackage")
