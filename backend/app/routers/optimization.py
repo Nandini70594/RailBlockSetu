@@ -9,16 +9,20 @@ from app.models.request import MaintenanceRequest, RequestStatus
 from app.models.user import User, UserRole
 from app.models.audit import AuditLog
 from app.schemas.optimization import OptimizationTriggerRequest, BlockApprovalRequest, MaintenanceBlockResponse
-from app.utils.security import get_current_user
+from app.utils.security import get_current_user, require_roles
 from app.optimization.scheduler import optimizer_scheduler
 
-router = APIRouter(prefix="/optimization", tags=["Block Optimization & Scheduling"])
+router = APIRouter(
+    prefix="/optimization",
+    tags=["Block Optimization & Scheduling"],
+    dependencies=[Depends(get_current_user)],
+)
 
 @router.post("/run")
 def trigger_optimization(
     trigger_data: OptimizationTriggerRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_roles([UserRole.OPERATIONS_OFFICER]))
 ):
     """Run Google OR-Tools CP-SAT multi-objective solver"""
     res = optimizer_scheduler.run_optimization(
@@ -69,7 +73,7 @@ def review_block(
     block_id: int,
     review_data: BlockApprovalRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_roles([UserRole.OPERATIONS_OFFICER]))
 ):
     """Railway Operations Officer authority: Approve or Reject proposed maintenance block"""
     b = db.query(MaintenanceBlock).filter(MaintenanceBlock.id == block_id).first()
@@ -113,7 +117,7 @@ def review_block(
 def toggle_pin_block(
     block_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_roles([UserRole.OPERATIONS_OFFICER]))
 ):
     b = db.query(MaintenanceBlock).filter(MaintenanceBlock.id == block_id).first()
     if not b:

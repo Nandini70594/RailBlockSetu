@@ -1,11 +1,13 @@
 import os
 from pydantic import BaseModel
 
+DEVELOPMENT_SECRET_KEY = "railblocksetu-ultra-secure-secret-key-2026-novex"
+
 class Settings(BaseModel):
     PROJECT_NAME: str = "RailBlockSetu"
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api/v1"
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "railblocksetu-ultra-secure-secret-key-2026-novex")
+    SECRET_KEY: str = os.getenv("SECRET_KEY") or DEVELOPMENT_SECRET_KEY
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
     
@@ -19,3 +21,11 @@ class Settings(BaseModel):
     UNSCHEDULED_PENALTY_WEIGHT: int = 1000
 
 settings = Settings()
+
+def warn_if_default_secret_key() -> None:
+    if settings.SECRET_KEY == DEVELOPMENT_SECRET_KEY:
+        print(
+            "!!! SECURITY WARNING: SECRET_KEY is unset or uses the default development key. "
+            "Set a unique SECRET_KEY environment variable before deployment. !!!",
+            flush=True,
+        )

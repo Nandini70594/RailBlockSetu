@@ -10,11 +10,32 @@ from app.models.section import RailwaySection
 from app.models.user import User, UserRole
 from app.models.audit import AuditLog
 from app.schemas.request import MaintenanceRequestCreate, MaintenanceRequestUpdate, MaintenanceRequestResponse
-from app.utils.security import get_current_user
+from app.utils.security import get_current_user, require_roles
 from app.ml.priority_model import priority_engine
 from app.optimization.readiness import readiness_validator
 
-router = APIRouter(prefix="/requests", tags=["Maintenance Request Management"])
+router = APIRouter(
+    prefix="/requests",
+    tags=["Maintenance Request Management"],
+    dependencies=[Depends(get_current_user)],
+)
+
+
+def _ensure_request_modifiable(req: MaintenanceRequest, current_user: User) -> None:
+    if current_user.role == UserRole.ADMIN:
+        return
+
+    if req.department != current_user.department.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Department officers may only modify requests in their own department.",
+        )
+
+    if req.current_status not in {RequestStatus.DRAFT, RequestStatus.SUBMITTED}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Requests may only be modified while in DRAFT or PENDING (SUBMITTED) state.",
+        )
 
 @router.get("", response_model=List[MaintenanceRequestResponse])
 def get_all_requests(
@@ -40,8 +61,17 @@ def get_request_by_id(request_id: int, db: Session = Depends(get_db)):
 def create_request(
     request_data: MaintenanceRequestCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_roles([UserRole.DEPARTMENT_OFFICER]))
 ):
+    if (
+        current_user.role != UserRole.ADMIN
+        and request_data.department != current_user.department.value
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Department officers may only create requests for their own department.",
+        )
+
     # Auto-generate request ID
     dept_prefix = request_data.department[:3].upper() if request_data.department else "REQ"
     count = db.query(MaintenanceRequest).count() + 1
@@ -119,13 +149,31 @@ def update_request(
     request_id: int,
     update_data: MaintenanceRequestUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_roles([UserRole.DEPARTMENT_OFFICER]))
 ):
     req = db.query(MaintenanceRequest).filter(MaintenanceRequest.id == request_id).first()
     if not req:
         raise HTTPException(status_code=404, detail="Maintenance request not found")
-        
+
+    _ensure_request_modifiable(req, current_user)
     update_dict = update_data.dict(exclude_unset=True)
+    if (
+        current_user.role != UserRole.ADMIN
+        and update_dict.get("department", req.department) != current_user.department.value
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Department officers may only modify requests in their own department.",
+        )
+    if (
+        current_user.role != UserRole.ADMIN
+        and update_dict.get("current_status") not in (None, RequestStatus.DRAFT, RequestStatus.SUBMITTED)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Department officers cannot move requests beyond DRAFT or PENDING (SUBMITTED) state.",
+        )
+
     for field, val in update_dict.items():
         setattr(req, field, val)
 
@@ -151,12 +199,13 @@ def update_request(
 def delete_request(
     request_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_roles([UserRole.DEPARTMENT_OFFICER]))
 ):
     req = db.query(MaintenanceRequest).filter(MaintenanceRequest.id == request_id).first()
     if not req:
         raise HTTPException(status_code=404, detail="Maintenance request not found")
-        
+
+    _ensure_request_modifiable(req, current_user)
     db.delete(req)
     db.commit()
     return {"message": f"Request {req.request_id} deleted successfully"}

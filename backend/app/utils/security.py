@@ -54,9 +54,12 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 def require_roles(allowed_roles: List[UserRole]):
     def role_checker(current_user: User = Depends(get_current_user)):
         if current_user.role not in allowed_roles and current_user.role != UserRole.ADMIN:
+            required_roles = [role.value for role in allowed_roles]
+            if UserRole.ADMIN not in allowed_roles:
+                required_roles.append(UserRole.ADMIN.value)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access forbidden: requires one of {[r.value for r in allowed_roles]}"
+                detail=f"Access forbidden: required role must be one of: {', '.join(required_roles)}"
             )
         return current_user
     return role_checker

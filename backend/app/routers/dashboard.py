@@ -13,8 +13,13 @@ from app.models.disruption import Disruption
 from app.models.train import TrainSchedule
 from app.models.audit import AuditLog
 from app.utils.network_graph import railway_network
+from app.utils.security import get_current_user
 
-router = APIRouter(prefix="/dashboard", tags=["Command Center Dashboard"])
+router = APIRouter(
+    prefix="/dashboard",
+    tags=["Command Center Dashboard"],
+    dependencies=[Depends(get_current_user)],
+)
 
 @router.get("/metrics")
 def get_dashboard_metrics(db: Session = Depends(get_db)) -> Dict[str, Any]:

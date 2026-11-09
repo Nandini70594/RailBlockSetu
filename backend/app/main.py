@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.config import settings
+from app.config import settings, warn_if_default_secret_key
 from app.database import engine, Base, SessionLocal
 from app.seed.demo_data import seed_database
 
@@ -21,6 +21,8 @@ from app.routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    warn_if_default_secret_key()
+
     # Initialize database tables
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()

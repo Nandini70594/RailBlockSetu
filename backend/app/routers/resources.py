@@ -6,9 +6,13 @@ from app.database import get_db
 from app.models.resource import Resource, ResourceType
 from app.schemas.resource import ResourceCreate, ResourceUpdate, ResourceResponse
 from app.models.user import User, UserRole
-from app.utils.security import get_current_user
+from app.utils.security import get_current_user, require_roles
 
-router = APIRouter(prefix="/resources", tags=["Resource Management"])
+router = APIRouter(
+    prefix="/resources",
+    tags=["Resource Management"],
+    dependencies=[Depends(get_current_user)],
+)
 
 @router.get("", response_model=List[ResourceResponse])
 def get_all_resources(
@@ -27,7 +31,7 @@ def get_all_resources(
 def create_resource(
     resource_data: ResourceCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    _: User = Depends(require_roles([UserRole.ADMIN]))
 ):
     r = Resource(**resource_data.dict())
     db.add(r)
@@ -40,7 +44,7 @@ def update_resource(
     resource_id: int,
     update_data: ResourceUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    _: User = Depends(require_roles([UserRole.ADMIN]))
 ):
     r = db.query(Resource).filter(Resource.id == resource_id).first()
     if not r:

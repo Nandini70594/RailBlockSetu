@@ -8,10 +8,14 @@ from app.models.disruption import Disruption, DisruptionType, DisruptionSeverity
 from app.models.user import User, UserRole
 from app.models.audit import AuditLog
 from app.schemas.disruption import DisruptionCreate, DisruptionResponse
-from app.utils.security import get_current_user
+from app.utils.security import get_current_user, require_roles
 from app.optimization.replanner import disruption_replanner
 
-router = APIRouter(prefix="/disruptions", tags=["Disruption Management & Replanning"])
+router = APIRouter(
+    prefix="/disruptions",
+    tags=["Disruption Management & Replanning"],
+    dependencies=[Depends(get_current_user)],
+)
 
 @router.get("", response_model=List[DisruptionResponse])
 def get_all_disruptions(db: Session = Depends(get_db)):
@@ -21,7 +25,7 @@ def get_all_disruptions(db: Session = Depends(get_db)):
 def create_disruption(
     disruption_data: DisruptionCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_roles([UserRole.OPERATIONS_OFFICER]))
 ):
     count = db.query(Disruption).count() + 1
     d_code = f"DIS-{datetime.utcnow().year}-{count:03d}"
@@ -59,7 +63,7 @@ def create_disruption(
 def trigger_disruption_replan(
     disruption_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_roles([UserRole.OPERATIONS_OFFICER]))
 ):
     """
     Railway Operations Officer replanning trigger:

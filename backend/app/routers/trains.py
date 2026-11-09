@@ -5,8 +5,13 @@ from typing import List
 from app.database import get_db
 from app.models.train import TrainSchedule
 from app.models.schedule import MaintenanceBlock, BlockStatus
+from app.utils.security import get_current_user
 
-router = APIRouter(prefix="/trains", tags=["Train Schedules & Corridor Traffic"])
+router = APIRouter(
+    prefix="/trains",
+    tags=["Train Schedules & Corridor Traffic"],
+    dependencies=[Depends(get_current_user)],
+)
 
 @router.get("")
 def get_train_schedules(db: Session = Depends(get_db)):
