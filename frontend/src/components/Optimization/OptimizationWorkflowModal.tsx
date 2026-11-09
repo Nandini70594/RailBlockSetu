@@ -1,11 +1,9 @@
-import React, { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useState, useEffect, useRef } from "react";
+import { motion } from "framer-motion";
 import {
   Cpu,
   CheckCircle2,
-  Clock,
   Sparkles,
-  ArrowRight,
   Shield,
   Layers,
   Wrench,
@@ -32,8 +30,9 @@ export const OptimizationWorkflowModal: React.FC<OptimizationWorkflowModalProps>
   onSuccess,
   horizonHours = 72,
 }) => {
-  if (!isOpen) return null;
   const { showToast } = useToast();
+  const onCompleteRef = useRef(onComplete);
+  const onSuccessRef = useRef(onSuccess);
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [isSolving, setIsSolving] = useState<boolean>(true);
   const [solverResult, setSolverResult] = useState<any>(null);
@@ -50,12 +49,23 @@ export const OptimizationWorkflowModal: React.FC<OptimizationWorkflowModalProps>
   ];
 
   useEffect(() => {
+    onCompleteRef.current = onComplete;
+    onSuccessRef.current = onSuccess;
+  }, [onComplete, onSuccess]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
     let cancelled = false;
 
     const executeWorkflow = async () => {
       try {
-        // Step 1: Analysing requests
         setCurrentStep(0);
+        setIsSolving(true);
+        setSolverResult(null);
+        setError(null);
+
+        // Step 1: Analysing requests
         await new Promise((r) => setTimeout(r, 600));
         if (cancelled) return;
 
@@ -90,8 +100,8 @@ export const OptimizationWorkflowModal: React.FC<OptimizationWorkflowModalProps>
         setCurrentStep(6);
         setSolverResult(res);
         setIsSolving(false);
-        onSuccess?.();
-        onComplete?.();
+        onSuccessRef.current?.();
+        onCompleteRef.current?.();
         showToast("success", "Optimization Solved", `${res.blocks_scheduled} maintenance blocks planned via CP-SAT.`);
       } catch (err: any) {
         if (!cancelled) {
@@ -107,7 +117,9 @@ export const OptimizationWorkflowModal: React.FC<OptimizationWorkflowModalProps>
     return () => {
       cancelled = true;
     };
-  }, [horizonHours]);
+  }, [horizonHours, isOpen, showToast]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in">
